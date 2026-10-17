@@ -389,7 +389,7 @@ def render_chart(fields, region, product, run, hour, destination):
     ax.grid(color='#6e7b88', linestyle=':', linewidth=.35, alpha=.5, zorder=6)
     valid = utc(run['forecast_zero']) + timedelta(hours=hour)
     fig.text(.055, .958, f'WM-6 {title}', fontsize=12, weight='bold', color='#183d59')
-    fig.text(.055, .927, f"Init: {run['initialization_time']}   Forecast zero: {run['forecast_zero']}", fontsize=9)
+    fig.text(.055, .927, f"Forecast base (forecast_zero): {run['forecast_zero']}   Provider run: {run['initialization_time']}", fontsize=9)
     fig.text(.055, .9, f"Forecast hour: [{hour:03d}]   Valid: {iso(valid)}   {region['label']}", fontsize=10)
     fig.text(.93, .9, '128-member ensemble mean', fontsize=9, ha='right', color='#486176')
     fig.text(.055, .061, 'L / H: local ensemble-mean MSLP minima / maxima, rounded hPa (not individual cyclone centres). City codes are display abbreviations, not stations.', fontsize=7, color='#455664')
@@ -484,11 +484,11 @@ def generate(args):
     manifest_path = out / 'index.json'
     previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'runs': []}
     current_directory = out / 'runs' / identifier
-    cached_run = next((item for item in previous.get('runs', []) if item.get('id') == identifier and item.get('generatorVersion') == 'native-zarr-v2-hl' and utc(item['forecastZero']) == utc(run['forecast_zero'])), None)
+    cached_run = next((item for item in previous.get('runs', []) if item.get('id') == identifier and item.get('generatorVersion') == 'native-zarr-v3-time' and utc(item['forecastZero']) == utc(run['forecast_zero'])), None)
     if current_directory.is_dir() and cached_run is None:
         shutil.rmtree(current_directory)
     record = {'id': identifier, 'initializationTime': iso(utc(run['initialization_time'])), 'forecastZero': iso(utc(run['forecast_zero'])), 'generatedAt': '', 'upstreamInProgress': bool(run.get('in_progress')), 'upstreamHours': available, 'requestedMaxHour': args.max_hour, 'frames': [], 'failures': []}
-    record['generatorVersion'] = 'native-zarr-v2-hl'
+    record['generatorVersion'] = 'native-zarr-v3-time'
     record['mslpCenters'] = True
     requested = {int(value) for value in args.hours.split(',')} if args.hours else set(hours)
     if not requested or any(hour < 0 or hour > args.max_hour or hour % 6 for hour in requested):

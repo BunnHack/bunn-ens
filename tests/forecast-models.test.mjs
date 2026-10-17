@@ -44,7 +44,7 @@ await test('Init stays provider-owned when the wall clock changes; forecast zero
  t.mock.method(Date,'now',()=>Date.parse('2030-01-01T00:00:00Z'))
  t.mock.method(globalThis,'fetch',async()=>Response.json(source))
  const app=createApp(Panel);app.mount('#app');await settle()
- try{assert.match(document.querySelector('.fm-time-anchor').textContent,/Init: 2026-10-17 03:00:00 UTC/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Forecast zero: 2026-10-17 00:00:00 UTC/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Valid: 2026-10-17 12:00:00 UTC/);assert.match(document.querySelector('.fm-time-explanation').textContent,/不是目前時間/);assert.match(document.querySelector('.fm-centers-note').textContent,/紅色 L／藍色 H/);assert.equal(data.parseForecastManifest(fixture()).runs[0].mslpCenters,false)}finally{app.unmount()}
+ try{assert.match(document.querySelector('.fm-time-anchor').textContent,/Provider run: 2026-10-17 03:00:00 UTC/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Forecast zero: 2026-10-17 00:00:00 UTC/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Valid: 2026-10-17 12:00:00 UTC/);assert.match(document.querySelector('.fm-time-explanation').textContent,/不是目前時間/);assert.match(document.querySelector('.fm-centers-note').textContent,/紅色 L／藍色 H/);assert.equal(data.parseForecastManifest(fixture()).runs[0].mslpCenters,false)}finally{app.unmount()}
 })
 await test('Screenshot-style viewer switches products, runs, regions and actual frames; absent hours cannot show stale charts',async t=>{
  t.mock.method(globalThis,'fetch',async()=>Response.json(fixture()))
@@ -84,13 +84,13 @@ await test('Viewer supports keyboard/playback, fullscreen/Escape, zoom and blob-
   for(const label of ['下載 SVG','下載 PNG'])await click('.fm-image-controls button',label)
   await click('.fm-bottom-controls button','FORECAST GIF');await click('.fm-bottom-controls button','TREND GIF')
   assert.deepEqual(downloads.map(n=>n.split('-').pop()),['012.svg','012.png','forecast.gif','012.gif'])
-  assert.ok(fetcher.mock.calls.filter(call=>!String(call.arguments[0]).endsWith('index.json')).every(call=>call.arguments[1].cache==='no-cache'))
+  assert.ok(fetcher.mock.calls.filter(call=>String(call.arguments[0]).startsWith(data.FORECAST_BASE)&&!String(call.arguments[0]).endsWith('index.json')).every(call=>call.arguments[1].cache==='no-cache'))
  }finally{app.unmount()}
 })
 await test('Republishing the same initialization busts image caches without changing the model time or selected hour',async t=>{
  const source=fixture();t.mock.method(globalThis,'fetch',async()=>Response.json(source))
  const app=createApp(Panel);app.mount('#app');await settle()
- try{const old=document.querySelector('.fm-chart-image').src;source.runs[0].generatedAt='2026-10-17T07:00:00Z';source.runs[0].mslpCenters=true;await click('.fm-refresh');const url=new URL(document.querySelector('.fm-chart-image').src);assert.notEqual(url.href,old);assert.equal(url.searchParams.get('publication'),source.runs[0].generatedAt);assert.match(url.pathname,/0300Z\/east-asia\/precip\/012.png$/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Init: 2026-10-17 03:00:00 UTC/);assert.match(document.querySelector('.fm-centers-note').textContent,/紅色 L／藍色 H/)}finally{app.unmount()}
+ try{const old=document.querySelector('.fm-chart-image').src;source.runs[0].generatedAt='2026-10-17T07:00:00Z';source.runs[0].mslpCenters=true;await click('.fm-refresh');const url=new URL(document.querySelector('.fm-chart-image').src);assert.notEqual(url.href,old);assert.equal(url.searchParams.get('publication'),source.runs[0].generatedAt);assert.match(url.pathname,/0300Z\/east-asia\/precip\/012.png$/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Provider run: 2026-10-17 03:00:00 UTC/);assert.match(document.querySelector('.fm-centers-note').textContent,/紅色 L／藍色 H/)}finally{app.unmount()}
 })
 await test('Refresh failure preserves and labels previously published chart data',async t=>{
  let fail=false;t.mock.method(globalThis,'fetch',async()=>fail?new Response('',{status:503}):Response.json(fixture()))
@@ -105,7 +105,7 @@ await test('Forecast Models is an internal deep link and returning to storms pre
   const lead=document.querySelector('[aria-label="Maximum forecast lead hours"]');lead.value='120';lead.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await settle()
   const link=[...document.querySelectorAll('.main-navigation a')].find(a=>a.textContent==='Forecast Models');assert.equal(link.getAttribute('href'),'#forecast-models');assert.equal(link.getAttribute('target'),null)
   window.location.hash='#forecast-models';await settle();assert.ok(document.querySelector('.fm-layout'));assert.equal(document.querySelector('.main-navigation [aria-current="page"]').textContent,'Forecast Models');assert.equal(document.querySelector('#main-content').style.display,'none');assert.equal(document.activeElement,document.querySelector('#forecast-models h1'))
-  window.location.hash='#main-content';await settle();assert.equal(document.querySelector('#forecast-models'),null);assert.equal(lead.value,'120');assert.equal(document.querySelector('#main-content').style.display,'')
+  window.location.hash='#main-content';await settle();assert.equal(document.querySelector('#forecast-models').style.display,'none');assert.equal(lead.value,'120');assert.equal(document.querySelector('#main-content').style.display,'')
  }finally{app.unmount();window.location.hash=''}
 })
 await test('Actions limits credentials to generation and publishes only chart assets on a schedule',async()=>{

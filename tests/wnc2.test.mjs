@@ -74,6 +74,6 @@ await test('Offline latest fallback explicitly denies freshness and other runs c
 await test('Aborted remote requests do not trigger fallback', async () => {
   const controller = new AbortController(); controller.abort()
   let calls = 0
-  await assert.rejects(() => loadEnsemble({ model: 'FNV3P1', cycle: 'latest' }, controller.signal, async () => { calls++; throw new DOMException('Aborted', 'AbortError') }), /Aborted/)
-  assert.equal(calls, 1)
+  await assert.rejects(() => loadEnsemble({ model: 'FNV3P1', cycle: 'latest' }, controller.signal, async () => { calls++; throw new DOMException('Aborted', 'AbortError') }), /abort/i)
+  assert.equal(calls, 0)
 })

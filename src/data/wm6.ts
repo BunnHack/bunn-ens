@@ -1,3 +1,5 @@
+import { cachedJson } from './request-cache.ts'
+
 export type Basin = 'AL' | 'EP' | 'CP' | 'WP' | 'NI' | 'SI' | 'AU' | 'SP'
 export type Wm6Point = { valid_at: string; forecast_hour: number; latitude: number; longitude: number; max_wind_kt?: number | null; min_mslp_hpa?: number | null; storm_type?: string; contributing_members_count?: number }
 export type Wm6MemberPath = { member: number; path: Wm6Point[] }
@@ -28,9 +30,7 @@ export type Wm6GeoJson = { type: 'FeatureCollection'; features: Array<{ type: 'F
 export type Wm6Params = { initialization_time?: string; basin?: Basin; include_unofficial_ids?: boolean; include_details?: boolean; format?: 'json' | 'geojson' }
 
 async function requestJson(url: string, signal: AbortSignal | undefined, fetcher: typeof fetch): Promise<unknown> {
-  const response = await fetcher(url, { signal })
-  if (!response.ok) throw new Error(`WM-6 returned HTTP ${response.status}`)
-  return response.json()
+  return cachedJson(url, signal, fetcher)
 }
 export async function loadWm6(params: Wm6Params = {}, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<Wm6Response | Wm6GeoJson> {
   const query = new URLSearchParams()

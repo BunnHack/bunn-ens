@@ -1,3 +1,5 @@
+import { cachedJson } from './request-cache.ts'
+
 export type Cycle = '00z' | '06z' | '12z' | '18z'
 export type Model = 'FNV3P1' | 'FNV3P2' | 'WNV3'
 export type TrackPoint = { sample: number; trackId: string; initTime: string; validTime: string; leadHours: number; lat: number; lon: number; wind: number; pressure: number | null }
@@ -151,9 +153,7 @@ export async function loadEnsemble(request: LoadRequest, signal?: AbortSignal, f
   try {
     const query = new URLSearchParams({ model: request.model, cycle: request.cycle })
     if (request.date) query.set('date', request.date)
-    const response = await fetcher(`/api/wnc2?${query}`, { signal })
-    if (!response.ok) throw new Error(`Remote source returned HTTP ${response.status}`)
-    const payload = await response.json() as { csv: string; run: Run; checkedAt: string }
+    const payload = await cachedJson<{ csv: string; run: Run; checkedAt: string }>(`/api/wnc2?${query}`, signal, fetcher)
     if (!payload.run || payload.run.model !== request.model || !['00z','06z','12z','18z'].includes(payload.run.cycle)) throw new Error('Invalid remote run metadata')
     if (request.cycle !== 'latest' && (payload.run.cycle !== request.cycle || (request.date && payload.run.date !== request.date))) throw new Error('Remote run does not match selected cycle/date')
     const catalog = parseCatalog(payload.csv)

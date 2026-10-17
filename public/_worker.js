@@ -191,11 +191,35 @@ async function handleWm6Detail(request, env, ctx, url, id) {
   }
 }
 
+async function handleWm6Availability(request, env, ctx, url) {
+  if (request.method !== 'GET') return jsonError('GET required', 405);
+  if (url.search) return jsonError('Availability does not accept query parameters', 400);
+  if (!env.WM_API_KEY) return jsonError('WM-6 API is not configured', 503);
+  const key = new Request(new URL('/_internal/wm6-availability-v1', request.url));
+  const cached = await caches.default.match(key);
+  if (cached) return new Response(cached.body, { headers: responseHeaders() });
+  try {
+    const upstream = await fetch('https://api.windbornesystems.com/forecasts/v1/wm-6/run_information', { headers: { authorization: `Bearer ${env.WM_API_KEY}`, accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
+    if (!upstream.ok) throw new Error(`WM-6 availability HTTP ${upstream.status}`);
+    const value = JSON.parse(await boundedText(upstream));
+    const time = item => typeof item === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(item) && Number.isFinite(Date.parse(item));
+    if (!time(value.initialization_time) || !time(value.forecast_zero) || typeof value.in_progress !== 'boolean' || !Array.isArray(value.available)) throw new Error('Invalid WM-6 availability metadata');
+    const hours = [...new Set(value.available.map(item => item.forecast_hour).filter(hour => Number.isInteger(hour) && hour >= 0 && hour <= 312))].sort((a,b) => a-b);
+    const payload = JSON.stringify({ initializationTime: value.initialization_time, forecastZero: value.forecast_zero, inProgress: value.in_progress, hours, checkedAt: new Date().toISOString() });
+    ctx.waitUntil(caches.default.put(key, new Response(payload, { headers: { ...responseHeaders(), 'cache-control': `public, max-age=${CACHE_SECONDS}` } })));
+    return new Response(payload, { headers: responseHeaders() });
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'wm6_availability_failed', message: error instanceof Error ? error.message : 'Unknown error' }));
+    return jsonError('Unable to verify latest WM-6 availability; published charts remain independent', 502);
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/api/wnc2') return handleWeatherNext(request, ctx, url);
     if (url.pathname === '/api/wm6') return handleWm6(request, env, ctx, url);
+    if (url.pathname === '/api/wm6/availability') return handleWm6Availability(request, env, ctx, url);
     if (url.pathname.startsWith('/api/wm6/')) return handleWm6Detail(request, env, ctx, url, decodeURIComponent(url.pathname.slice('/api/wm6/'.length)));
     return env.ASSETS.fetch(request);
   },

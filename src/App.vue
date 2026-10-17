@@ -70,10 +70,12 @@ const currentHash = ref(window.location.hash)
 const weatherToolsOpen = computed(() => /^#weather-tools(?:\/|$)/.test(currentHash.value))
 const weatherToolsVisited = ref(weatherToolsOpen.value)
 const forecastModelsOpen = computed(() => currentHash.value === '#forecast-models')
+const forecastModelsVisited = ref(forecastModelsOpen.value)
 const weatherToolId = computed(() => currentHash.value.startsWith('#weather-tools/') ? currentHash.value.slice('#weather-tools/'.length) : undefined)
 async function onHashChange() {
   currentHash.value = window.location.hash
   if (weatherToolsOpen.value) weatherToolsVisited.value = true
+  if (forecastModelsOpen.value) forecastModelsVisited.value = true
   closeDialogs()
   await nextTick()
   if (weatherToolsOpen.value) {
@@ -107,7 +109,7 @@ onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener(
     </header>
 
     <WeatherTools v-if="weatherToolsVisited" v-show="weatherToolsOpen" :tool-id="weatherToolId" />
-    <ForecastModels v-if="forecastModelsOpen" />
+    <ForecastModels v-if="forecastModelsVisited" v-show="forecastModelsOpen" :active="forecastModelsOpen" />
     <main v-show="!weatherToolsOpen && !forecastModelsOpen" id="main-content">
       <section class="page-title-row">
         <div>

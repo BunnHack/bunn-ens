@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Wnc2Plot from './Wnc2Plot.vue'
 import ChartFrame from './ChartFrame.vue'
 import { analyze96W, ensembleFromPoints, loadEnsemble, sourceUrl, trackOptions, REFRESH_MS, SNAPSHOT_RUN, type Cycle, type DataResult, type Model } from '../data/wnc2'
+import { clearRequestCache } from '../data/request-cache'
 
 const result = ref<DataResult | null>(null)
 const loading = ref(false)
@@ -42,16 +43,17 @@ async function refresh(clear = false) {
   } catch (cause) { if (!active.signal.aborted) error.value = cause instanceof Error ? cause.message : 'Unable to load forecast data' }
   finally { if (!active.signal.aborted) loading.value = false }
 }
+function reload() { clearRequestCache(fetch, '/api/wnc2'); refresh() }
 function setCycle(cycle: Cycle) {
   autoLatest.value = false
   manualCycle.value = cycle
   refresh(true)
 }
 function toggleAuto() { autoLatest.value = !autoLatest.value; refresh(true) }
-function onVisibility() { if (document.visibilityState === 'visible' && autoLatest.value && !loading.value) refresh() }
+function onVisibility() { if (document.visibilityState === 'visible' && autoLatest.value && !loading.value) reload() }
 onMounted(() => {
   refresh()
-  timer = setInterval(() => { if (autoLatest.value && document.visibilityState !== 'hidden' && !loading.value) refresh() }, REFRESH_MS)
+  timer = setInterval(() => { if (autoLatest.value && document.visibilityState !== 'hidden' && !loading.value) reload() }, REFRESH_MS)
   document.addEventListener('visibilitychange', onVisibility)
 })
 watch(model, () => refresh(true))
@@ -68,14 +70,14 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
       <div class="cycle-selector" aria-label="WNC2 Ensembles model cycle"><button v-for="cycle in cycles" :key="cycle" :class="{ selected: (autoLatest ? result?.run.cycle : manualCycle) === cycle }" :aria-pressed="(autoLatest ? result?.run.cycle : manualCycle) === cycle" @click="setCycle(cycle)">{{ cycle }}</button></div>
     </div>
     <p v-if="loading" class="loading-note" role="status">{{ result ? 'Checking for a newer published run…' : 'Discovering published WeatherNext CSV…' }}</p>
-    <div v-if="error" class="wnc2-state error" role="alert"><p>{{ error }}{{ result ? ' Retaining the previous successful run; it is not a fresh update.' : '' }}</p><button @click="refresh()">Retry</button></div>
+    <div v-if="error" class="wnc2-state error" role="alert"><p>{{ error }}{{ result ? ' Retaining the previous successful run; it is not a fresh update.' : '' }}</p><button @click="reload()">Retry</button></div>
     <template v-if="result">
       <p class="system-disclaimer">Initialized {{ initialized }} UTC · {{ result.run.model }}<br />Selected track is independent of the static 96W screenshot data.</p>
       <label class="track-field">System / sample-specific genesis track<select v-model="selectedTrack" aria-label="WNC2 system"><option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}</option></select></label>
       <label class="lead-field">Forecast window: 0–{{ maxLead }}h <input v-model.number="maxLead" type="range" min="0" max="312" step="6" aria-label="Maximum forecast lead hours" /></label>
       <p class="lead-caption">Selected track available through +{{ availableMax }}h. No positions are invented beyond its lifetime.</p>
       <ChartFrame v-if="data" :filename="`WNC2-${selectedTrack.replace(/[^A-Za-z0-9_-]/g, '-')}-${result.run.date}-${result.run.cycle}-0-${maxLead}h`" :title="`WNC2 ${selectedTrack}`"><Wnc2Plot :key="`${initialized}-${selectedTrack}`" :data="data" :max-lead="maxLead" /></ChartFrame>
-      <div class="wnc2-controls"><button class="text-button" @click="enlarged = true" :disabled="!data"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge chart</button><button class="text-button" @click="refresh()" :disabled="loading" aria-label="Reload WNC2 CSV"><span class="material-icons-round" aria-hidden="true">refresh</span></button></div>
+      <div class="wnc2-controls"><button class="text-button" @click="enlarged = true" :disabled="!data"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge chart</button><button class="text-button" @click="reload()" :disabled="loading" aria-label="Reload WNC2 CSV"><span class="material-icons-round" aria-hidden="true">refresh</span></button></div>
       <p class="data-status" :class="result.source">{{ result.source === 'remote' ? 'WeatherNext CSV connected' : 'Offline CSV snapshot — not confirmed latest' }} · {{ result.catalog.totalSamples }} ensemble samples</p>
       <p class="checked-at">Checked {{ result.checkedAt.replace('T', ' ').slice(0,19) }} UTC</p>
       <p v-if="result.warning" class="data-warning">{{ result.warning }}</p>
