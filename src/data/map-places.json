@@ -1,0 +1,20 @@
+[
+  { "name": "台北", "enName": "Taipei", "code": "TPE", "lat": 25.033, "lon": 121.5654 },
+  { "name": "台中", "enName": "Taichung", "code": "TXG", "lat": 24.1477, "lon": 120.6736 },
+  { "name": "彰化", "enName": "Changhua", "code": "CHUA", "lat": 24.075, "lon": 120.5439 },
+  { "name": "雲林", "enName": "Yunlin", "code": "YUN", "lat": 23.7092, "lon": 120.4313 },
+  { "name": "嘉義", "enName": "Chiayi", "code": "CYI", "lat": 23.4801, "lon": 120.4491 },
+  { "name": "苗栗", "enName": "Miaoli", "code": "MLI", "lat": 24.5602, "lon": 120.8214 },
+  { "name": "花蓮", "enName": "Hualien", "code": "HUN", "lat": 23.9872, "lon": 121.6015 },
+  { "name": "台東", "enName": "Taitung", "code": "TTT", "lat": 22.7554, "lon": 121.15 },
+  { "name": "高雄", "enName": "Kaohsiung", "code": "KHH", "lat": 22.6273, "lon": 120.3014 },
+  { "name": "香港", "enName": "Hong Kong", "code": "HKG", "lat": 22.3193, "lon": 114.1694 },
+  { "name": "那霸", "enName": "Naha", "code": "OKA", "lat": 26.2124, "lon": 127.6809 },
+  { "name": "鹿兒島", "enName": "Kagoshima", "code": "KOJ", "lat": 31.5966, "lon": 130.5571 },
+  { "name": "東京", "enName": "Tokyo", "code": "TYO", "lat": 35.6762, "lon": 139.6503 },
+  { "name": "馬尼拉", "enName": "Manila", "code": "MNL", "lat": 14.5995, "lon": 120.9842 },
+  { "name": "Honolulu", "enName": "Honolulu", "code": "HNL", "lat": 21.3069, "lon": -157.8583 },
+  { "name": "Miami", "enName": "Miami", "code": "MIA", "lat": 25.7617, "lon": -80.1918 },
+  { "name": "La Paz", "enName": "La Paz", "code": "LAP", "lat": 24.1426, "lon": -110.3128 },
+  { "name": "Darwin", "enName": "Darwin", "code": "DRW", "lat": -12.4634, "lon": 130.8456 }
+]

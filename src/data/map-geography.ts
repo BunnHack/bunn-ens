@@ -1,4 +1,5 @@
 import fineMap from './fine-map.json'
+import places from './map-places.json'
 import { regionLongitude, type BasinRegion } from './basin'
 
 type MapLine = { bounds: number[]; path: string }
@@ -29,17 +30,8 @@ export function geographicPaths(kind: 'land' | 'borders', region: BasinRegion) {
   }
   return paths
 }
-export const mapPlaces = [
-  { name: '台北', lat: 25.033, lon: 121.5654 }, { name: '台中', lat: 24.1477, lon: 120.6736 },
-  { name: '彰化', lat: 24.075, lon: 120.5439 }, { name: '雲林', lat: 23.7092, lon: 120.4313 },
-  { name: '嘉義', lat: 23.4801, lon: 120.4491 }, { name: '苗栗', lat: 24.5602, lon: 120.8214 },
-  { name: '花蓮', lat: 23.9872, lon: 121.6015 }, { name: '台東', lat: 22.7554, lon: 121.15 },
-  { name: '高雄', lat: 22.6273, lon: 120.3014 }, { name: '香港', lat: 22.3193, lon: 114.1694 },
-  { name: '那霸', lat: 26.2124, lon: 127.6809 }, { name: '鹿兒島', lat: 31.5966, lon: 130.5571 },
-  { name: '東京', lat: 35.6762, lon: 139.6503 }, { name: '馬尼拉', lat: 14.5995, lon: 120.9842 },
-  { name: 'Honolulu', lat: 21.3069, lon: -157.8583 }, { name: 'Miami', lat: 25.7617, lon: -80.1918 },
-  { name: 'La Paz', lat: 24.1426, lon: -110.3128 }, { name: 'Darwin', lat: -12.4634, lon: 130.8456 },
-]
+// Display abbreviations, not station identifiers; full city names remain in tooltips.
+export const mapPlaces = places
 export function visiblePlaces(region: BasinRegion) {
   return mapPlaces.filter(place => {
     const lon = regionLongitude(place.lon, region)

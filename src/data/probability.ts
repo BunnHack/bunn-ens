@@ -7,7 +7,7 @@ type Vector = [number, number, number]
 type Position = { lat: number; lon: number }
 type Arc = { a: Vector; b: Vector; normal: Vector; angle: number; start: Position; lengthKm: number }
 type Member = { sample: number; arcs: Arc[] }
-export type ProbabilityField = { region: BasinRegion; radiusKm: number; maxLead: number; denominator: number; trackedMembers: number; step: number; columns: number; rows: number; values: number[]; contours: Array<{ level: number; rings: number[][][] }>; cities: Array<{ name: string; hits: number; percent: number; lat: number; lon: number }> }
+export type ProbabilityField = { region: BasinRegion; radiusKm: number; maxLead: number; denominator: number; trackedMembers: number; step: number; columns: number; rows: number; values: number[]; contours: Array<{ level: number; rings: number[][][] }>; cities: Array<{ name: string; code?: string; enName?: string; hits: number; percent: number; lat: number; lon: number }> }
 const R = 6371.0088, rad = Math.PI / 180
 const clamp = (v: number) => Math.max(-1, Math.min(1, v))
 const dot = (a: Vector, b: Vector) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]

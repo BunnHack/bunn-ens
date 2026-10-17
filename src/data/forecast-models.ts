@@ -12,7 +12,7 @@ export type ForecastRegion = typeof forecastRegions[number]['id']
 export type ChartFiles = { png: string; svg: string }
 export type ForecastFrame = { hour: number; validTime: string; files: Partial<Record<ForecastRegion, Partial<Record<ForecastProduct, ChartFiles>>>> }
 export type ForecastRun = {
-  id: string; initializationTime: string; forecastZero: string; generatedAt: string; upstreamInProgress: boolean
+  id: string; initializationTime: string; forecastZero: string; generatedAt: string; upstreamInProgress: boolean; mslpCenters: boolean
   upstreamHours: number[]; requestedMaxHour: number; frames: ForecastFrame[]; failures: unknown[]
   animations: Partial<Record<ForecastRegion, Partial<Record<ForecastProduct, string>>>>
   trends: Partial<Record<ForecastRegion, Partial<Record<ForecastProduct, Record<string, string>>>>>
@@ -65,7 +65,7 @@ export function parseForecastManifest(value: unknown): ForecastManifest {
         }
       }
     }
-    return { id: run.id, initializationTime: run.initializationTime, forecastZero: run.forecastZero, generatedAt: run.generatedAt, upstreamInProgress: run.upstreamInProgress === true, upstreamHours: run.upstreamHours, requestedMaxHour: Number(run.requestedMaxHour) || 312, frames, failures: Array.isArray(run.failures) ? run.failures : [], animations, trends }
+    return { id: run.id, initializationTime: run.initializationTime, forecastZero: run.forecastZero, generatedAt: run.generatedAt, upstreamInProgress: run.upstreamInProgress === true, mslpCenters: run.mslpCenters === true, upstreamHours: run.upstreamHours, requestedMaxHour: Number(run.requestedMaxHour) || 312, frames, failures: Array.isArray(run.failures) ? run.failures : [], animations, trends }
   })
   if (new Set(runs.map(run => run.id)).size !== runs.length) throw new Error('重複初始化。')
   return { version: 1, model: 'WM-6', statistic: 'ensemble_mean', ensembleSize: 128, resolutionDegrees: .25, runs }

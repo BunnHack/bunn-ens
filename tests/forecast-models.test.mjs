@@ -39,6 +39,13 @@ await test('Manifest fetch is public and rejects missing or malformed publicatio
  await assert.rejects(data.loadForecastManifest(undefined,async()=>new Response('',{status:404})),/尚未發布/)
  await assert.rejects(data.loadForecastManifest(undefined,async()=>Response.json({model:'GFS'})),/格式/)
 })
+await test('Init stays provider-owned when the wall clock changes; forecast zero and publication are separate',async t=>{
+ const source=fixture();source.runs[0].mslpCenters=true
+ t.mock.method(Date,'now',()=>Date.parse('2030-01-01T00:00:00Z'))
+ t.mock.method(globalThis,'fetch',async()=>Response.json(source))
+ const app=createApp(Panel);app.mount('#app');await settle()
+ try{assert.match(document.querySelector('.fm-time-anchor').textContent,/Init: 2026-10-17 03:00:00 UTC/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Forecast zero: 2026-10-17 00:00:00 UTC/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Valid: 2026-10-17 12:00:00 UTC/);assert.match(document.querySelector('.fm-time-explanation').textContent,/不是目前時間/);assert.match(document.querySelector('.fm-centers-note').textContent,/紅色 L／藍色 H/);assert.equal(data.parseForecastManifest(fixture()).runs[0].mslpCenters,false)}finally{app.unmount()}
+})
 await test('Screenshot-style viewer switches products, runs, regions and actual frames; absent hours cannot show stale charts',async t=>{
  t.mock.method(globalThis,'fetch',async()=>Response.json(fixture()))
  const app=createApp(Panel);app.mount('#app');await settle()

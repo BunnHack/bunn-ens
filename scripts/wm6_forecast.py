@@ -281,11 +281,71 @@ def contour(ax, x, y, values, levels, color, dashed=False):
     ax.clabel(lines, fontsize=6.5, fmt='%d', inline=True, inline_spacing=2)
 
 
+def pressure_centers(x, y, pressure, radius_degrees=2.5, prominence_hpa=.5, separation_km=600):
+    """Closed, interior local extrema of the actual ensemble-mean MSLP, not TC centres."""
+    values = np.asarray(np.ma.filled(pressure, np.nan), dtype=float)
+    if len(x) < 3 or len(y) < 3:
+        return []
+    rx = max(1, int(np.ceil(radius_degrees / np.median(np.abs(np.diff(x))))))
+    ry = max(1, int(np.ceil(radius_degrees / np.median(np.abs(np.diff(y))))))
+    if values.shape != (len(y), len(x)) or len(x) <= 2*rx or len(y) <= 2*ry:
+        return []
+    from numpy.lib.stride_tricks import sliding_window_view
+    def box(data, operation):
+        data = operation(sliding_window_view(np.pad(data, ((0, 0), (rx, rx)), constant_values=np.nan), 2*rx+1, axis=1), axis=-1)
+        return operation(sliding_window_view(np.pad(data, ((ry, ry), (0, 0)), constant_values=np.nan), 2*ry+1, axis=0), axis=-1)
+    lo, hi = box(values, np.min), box(values, np.max)
+    selected = []
+    for kind, extreme in [('L', lo), ('H', hi)]:
+        candidates = []
+        for row, col in np.argwhere(np.isfinite(extreme) & (values == extreme)):
+            ring = np.concatenate((values[row-ry, col-rx:col+rx+1], values[row+ry, col-rx:col+rx+1], values[row-ry+1:row+ry, col-rx], values[row-ry+1:row+ry, col+rx]))
+            value = float(values[row, col])
+            prominence = np.min(ring) - value if kind == 'L' else value - np.max(ring)
+            if prominence >= prominence_hpa:
+                candidates.append({'kind': kind, 'lon': float(x[col]), 'lat': float(y[row]), 'pressure_hpa': value})
+        candidates.sort(key=lambda item: item['pressure_hpa'], reverse=kind == 'H')
+        accepted = []
+        for candidate in candidates:
+            def km(other):
+                lat1, lat2 = np.radians([candidate['lat'], other['lat']])
+                angle = np.sin((lat1-lat2)/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(np.radians(candidate['lon']-other['lon'])/2)**2
+                return 12742.0176*np.arcsin(np.sqrt(min(1, angle)))
+            if all(km(other) >= separation_km for other in accepted):
+                accepted.append(candidate)
+                if len(accepted) == 6:
+                    break
+        selected.extend(accepted)
+    return selected
+
+
+def map_annotations(ax, region, centers):
+    import matplotlib.patheffects as effects
+    stroke = [effects.withStroke(linewidth=2.5, foreground='white')]
+    for index, center in enumerate(centers):
+        color = '#d02232' if center['kind'] == 'L' else '#1855bd'
+        text = ax.text(center['lon'], center['lat'], f"{center['pressure_hpa']:.0f}\n{center['kind']}", ha='center', va='center', color=color, fontsize=13, weight='bold', linespacing=.95, path_effects=stroke, zorder=15, clip_on=True)
+        text.set_gid(f"mslp-center-{center['kind']}-{index}")
+    west, east, south, north = region['bounds']
+    chosen = []
+    for place in json.loads((ROOT / 'src/data/map-places.json').read_text()):
+        lon = west + (place['lon']-west) % 360
+        lat = place['lat']
+        if not west < lon < east or not south < lat < north:
+            continue
+        if any(np.hypot((lon-other[0])/(east-west), (lat-other[1])/(north-south)) < .075 for other in chosen):
+            continue
+        chosen.append((lon, lat))
+        ax.plot(lon, lat, '.', color='#40464b', markersize=2, zorder=12)
+        text = ax.annotate(place['code'], (lon, lat), xytext=(3, 3), textcoords='offset points', fontsize=7, color='#444f59', path_effects=stroke, zorder=12, annotation_clip=True)
+        text.set_gid('city-' + place['code'])
+
+
 def render_chart(fields, region, product, run, hour, destination):
     key = {'precip': 'precip', 'wind': 'wind_speed_10m', 'upper': 't500', 'temperature': 'temperature_2m'}[product]
     x, y, shaded = regional_grid(fields[key], region)
     fig, ax = plt.subplots(figsize=(14, 10), dpi=130)
-    fig.subplots_adjust(left=.055, right=.925, bottom=.085, top=.87)
+    fig.subplots_adjust(left=.055, right=.925, bottom=.105, top=.87)
     if product == 'precip':
         _, _, previous = regional_grid(fields['previous_precip'], region)
         shaded = precipitation_rate(shaded, previous)
@@ -319,6 +379,8 @@ def render_chart(fields, region, product, run, hour, destination):
     add_geography(ax, region)
     west, east, south, north = region['bounds']
     ax.set(xlim=(west, east), ylim=(south, north))
+    centers = pressure_centers(x, y, p) if product in ('precip', 'wind') else []
+    map_annotations(ax, region, centers)
     ax.set_xticks(np.arange(np.ceil(west/10)*10, east+.01, 10))
     ax.set_yticks(np.arange(np.ceil(south/10)*10, north+.01, 10))
     ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f'{abs(v):g}°{"W" if v < 0 else "E"}'))
@@ -330,10 +392,11 @@ def render_chart(fields, region, product, run, hour, destination):
     fig.text(.055, .927, f"Init: {run['initialization_time']}   Forecast zero: {run['forecast_zero']}", fontsize=9)
     fig.text(.055, .9, f"Forecast hour: [{hour:03d}]   Valid: {iso(valid)}   {region['label']}", fontsize=10)
     fig.text(.93, .9, '128-member ensemble mean', fontsize=9, ha='right', color='#486176')
+    fig.text(.055, .061, 'L / H: local ensemble-mean MSLP minima / maxima, rounded hPa (not individual cyclone centres). City codes are display abbreviations, not stations.', fontsize=7, color='#455664')
     fig.text(.055, .045, interval, fontsize=8, color='#455664')
     fig.text(.055, .022, 'WindBorne WM-6 0.25° · Generated by GitHub Actions · Natural Earth 1:50m · Forecast guidance, not an official warning', fontsize=8, color='#455664')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    metadata = {'Title': f'WM-6 {title}', 'Description': f"Initialization {run['initialization_time']}; forecast_zero {run['forecast_zero']}; +{hour}h; valid {iso(valid)}; ensemble mean. {interval}"}
+    metadata = {'Title': f'WM-6 {title}', 'Description': f"Initialization {run['initialization_time']}; forecast_zero {run['forecast_zero']}; +{hour}h; valid {iso(valid)}; ensemble mean. {interval} MSLP local extrema (unrounded hPa): {json.dumps(centers, separators=(',', ':'), allow_nan=False)}"}
     # Keep native 0.25° geometry; palette PNG + lossless gzip SVG fit Pages' size limits.
     from PIL import Image, PngImagePlugin
     image_buffer = io.BytesIO()
@@ -421,11 +484,12 @@ def generate(args):
     manifest_path = out / 'index.json'
     previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'runs': []}
     current_directory = out / 'runs' / identifier
-    cached_run = next((item for item in previous.get('runs', []) if item.get('id') == identifier and item.get('generatorVersion') == 'native-zarr-v1' and utc(item['forecastZero']) == utc(run['forecast_zero'])), None)
+    cached_run = next((item for item in previous.get('runs', []) if item.get('id') == identifier and item.get('generatorVersion') == 'native-zarr-v2-hl' and utc(item['forecastZero']) == utc(run['forecast_zero'])), None)
     if current_directory.is_dir() and cached_run is None:
         shutil.rmtree(current_directory)
     record = {'id': identifier, 'initializationTime': iso(utc(run['initialization_time'])), 'forecastZero': iso(utc(run['forecast_zero'])), 'generatedAt': '', 'upstreamInProgress': bool(run.get('in_progress')), 'upstreamHours': available, 'requestedMaxHour': args.max_hour, 'frames': [], 'failures': []}
-    record['generatorVersion'] = 'native-zarr-v1'
+    record['generatorVersion'] = 'native-zarr-v2-hl'
+    record['mslpCenters'] = True
     requested = {int(value) for value in args.hours.split(',')} if args.hours else set(hours)
     if not requested or any(hour < 0 or hour > args.max_hour or hour % 6 for hour in requested):
         raise ValueError('Requested hours must be comma-separated 0–312h multiples of six')
