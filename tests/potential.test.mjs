@@ -15,17 +15,17 @@ const { basinCsv } = await import(await compileFile('src/data/basin.ts'))
 const { createWnc2Proxy } = await import(await compileFile('server/wnc2-proxy.ts'))
 const csv = 'init_time,track_id,sample,valid_time,lead_time_hours,lat,lon,maximum_sustained_wind_speed_knots,minimum_sea_level_pressure_hpa\n' + [
   '2026-10-16 18:00:00,WP292026,0,2026-10-16 18:00:00,0,12,150,65,990',
-  '2026-10-16 18:00:00,WP292026,0,2026-10-17 18:00:00,24,13,145,83,980',
+  '2026-10-16 18:00:00,WP292026,0,2026-10-17 00:00:00,6,13,145,83,980',
   '2026-10-16 18:00:00,WP292026,1,2026-10-16 18:00:00,0,13,151,34,999',
-  '2026-10-16 18:00:00,WP292026,1,2026-10-17 18:00:00,24,14,146,50,990',
+  '2026-10-16 18:00:00,WP292026,1,2026-10-17 00:00:00,6,14,146,50,990',
   '2026-10-16 18:00:00,EP202026,0,2026-10-16 18:00:00,0,15,-115,40,998',
   '2026-10-16 18:00:00,7,0,2026-10-16 18:00:00,0,15,170,20,1005',
   '2026-10-16 18:00:00,7,1,2026-10-16 18:00:00,0,14,172,22,1004',
   '2026-10-16 18:00:00,WP292026,0,2026-10-30 18:00:00,336,30,130,180,900',
 ].join('\n')
 const init = '2026-10-16T09:00:00Z'
-const point = (hour, wind, lon = 140) => ({ forecast_hour: hour, valid_at: init, latitude: 15 + hour / 24, longitude: lon, max_wind_kt: wind, min_mslp_hpa: 990, storm_type: 'TS' })
-const detail = id => ({ tropical_cyclone_id: id, initialization_time: init, forecast_zero: init, mean_path: [point(0, 45), point(24, 50)], members_path: [{ member: 1, path: [point(0, 65), point(24, 83), point(336, 190)] }, { member: 2, path: [point(0, null), point(24, null)] }], matched_members: 2, ens_size: 128 })
+const point = (hour, wind, lon = 140) => ({ forecast_hour: hour, valid_at: new Date(Date.parse(init) + hour * 3600000).toISOString(), latitude: 15 + hour / 24, longitude: lon, max_wind_kt: wind, min_mslp_hpa: 990, storm_type: 'TS' })
+const detail = id => ({ tropical_cyclone_id: id, initialization_time: init, forecast_zero: init, mean_path: [point(0, 45), point(6, 50)], members_path: [{ member: 1, path: [point(0, 65), point(6, 83), point(336, 190)] }, { member: 2, path: [point(0, null), point(6, null)] }], matched_members: 2, ens_size: 128 })
 const weather = url => Response.json({ csv, run: { model: String(url).includes('WNV3') ? 'WNV3' : 'FNV3P1', date: '2026-10-16', cycle: '18z' }, checkedAt: init })
 const wmFetch = async url => {
   const u = new URL(url, 'https://example.test')

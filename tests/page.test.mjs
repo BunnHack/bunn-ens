@@ -41,7 +41,7 @@ await test('Retain reference content rather than the invented dashboard', () => 
   assert.equal(document.querySelectorAll('.main-navigation a').length, 6)
   assert.equal(document.querySelectorAll('.storm-details > div').length, 6)
   assert.equal(document.querySelectorAll('.forecast-card').length, 4)
-  assert.equal(document.querySelectorAll('.image-button img').length, 4)
+  assert.equal(document.querySelectorAll('.image-button img').length, 3)
   assert.ok(document.body.textContent.includes('WM-6 Ensemble'))
   assert.ok(document.body.textContent.includes('WNC2 Ensembles'))
   assert.ok(!document.body.textContent.includes('GFS Ensembles'))
@@ -80,7 +80,7 @@ await test('Model cycle selection never pretends to update the static chart', as
   assert.equal(document.querySelector('.cycle-selector button').getAttribute('aria-pressed'), 'true')
   assert.match(document.querySelector('.cycle-note').textContent, /00z unavailable · showing 06z reference/)
   assert.equal(document.querySelector('.forecast-image img').getAttribute('src'), image)
-  assert.match(document.querySelector('[role="status"]').textContent, /reference image has not changed/)
+  assert.match(document.querySelector('.snackbar[role="status"]').textContent, /reference image has not changed/)
   await click(document.querySelector('.snackbar button'))
 })
 

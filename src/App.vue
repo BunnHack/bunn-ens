@@ -4,6 +4,7 @@ import WeatherTools from './components/WeatherTools.vue'
 import Wnc2Ensemble from './components/Wnc2Ensemble.vue'
 import Wm6Ensemble from './components/Wm6Ensemble.vue'
 import ForecastModels from './components/ForecastModels.vue'
+import IntensityGuidance from './components/IntensityGuidance.vue'
 
 type Cycle = '00z' | '06z' | '12z' | '18z'
 type Forecast = {
@@ -28,7 +29,7 @@ const forecasts = ref<Forecast[]>([
   { id: 'global', title: 'Global + Hurricane Models', image: '/images/global-models.png', description: 'Deterministic model track guidance', cycle: '06z' },
   { id: 'wnc2', title: 'WNC2 Ensembles', description: 'WeatherNext 2 Cyclones · FNV3.2', cycle: '06z' },
   { id: 'wm6', title: 'WM-6 Ensemble', image: '/images/eps-ensembles.png', description: 'WindBorne tropical cyclone ensemble tracker', cycle: '06z' },
-  { id: 'intensity', title: 'Intensity Guidance', image: '/images/21E-intensity-reference.png', description: '21E TRUDY · 00Z Oct 17, 2026 · supplied reference', cycle: '00z' },
+  { id: 'intensity', title: 'Intensity Guidance', description: 'WNC2 / WNC3 / WM-6 · ensemble-mean cyclone intensity', cycle: '00z' },
 ])
 const stormDetails = [
   { label: 'Location', value: '9.7°N 162.6°E' },
@@ -129,7 +130,7 @@ onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener(
           <span class="material-icons-round disclosure-icon" :class="{ expanded: informationOpen }" aria-hidden="true">expand_more</span>
         </button>
         <div v-if="informationOpen" id="data-information" class="information-content">
-          Invest 96W's details, satellite imagery and other guidance panels are screenshot references, not live feeds. WindBorne WM-6 shows individual member tracks classified locally using WNC2 wind thresholds and the provider mean on a Natural Earth coastline map. Cones and landfall markers have been removed. PNG and SVG chart downloads are available. WM-6 data are forecast guidance, not official warnings. WNC2 checks Google's latest 00/06/12/18Z CSV every five minutes while visible and displays 0–312h. Offline snapshots are explicitly labeled and not confirmed latest. Always consult official meteorological agencies for current warnings.
+          Invest 96W's details, satellite imagery, surface plot and Global + Hurricane image are dated screenshot references, not live feeds. WNC2 and WM-6 track panels use actual forecast data with source dates. Intensity Guidance compares WNC2, WNC3 and WM-6 conditional member means for a separately selected real ATCF ID; it is not automatically a 96W forecast. Original winds/pressures are retained, without pressure-derived wind. WM-6 uses the provider version and a separate forecast_zero lead anchor. Forecast Models loads pre-generated static charts, not private grids per visitor. Active panels check every five minutes with shared browser-memory and server caches; hidden storm panels do not poll. Offline/old data and missing models are explicitly labelled. Cones and landfall markers are not plotted. Always consult official meteorological agencies for warnings.
         </div>
       </div>
 
@@ -167,13 +168,14 @@ onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener(
         <section class="models-section" aria-labelledby="models-title">
           <div class="models-heading"><h2 id="models-title">Model Forecasts</h2><button class="text-button" @click="acronymsOpen = true">List of model acronyms<span class="material-icons-round" aria-hidden="true">help_outline</span></button></div>
           <div class="forecast-grid">
-            <article v-for="forecast in forecasts" :key="forecast.id" class="forecast-card card">
+            <article v-for="forecast in forecasts" :key="forecast.id" class="forecast-card card" :class="{ 'intensity-live-card': forecast.id === 'intensity' }">
               <div class="forecast-heading"><h3>{{ forecast.title }}</h3><p>{{ forecast.description }}</p></div>
-              <Wnc2Ensemble v-if="forecast.id === 'wnc2'" />
-              <Wm6Ensemble v-else-if="forecast.id === 'wm6'" />
-              <button v-else-if="forecast.image" class="image-button forecast-image" :aria-label="`Enlarge ${forecast.title} reference image`" @click="openImage(forecast.title, forecast.image, forecast.id === 'intensity' ? 'Supplied reference: Hurricane TRUDY (21E), initialized 00Z Oct 17, 2026. Not live and not an intensity forecast for Invest 96W.' : 'Static 06z reference image from the supplied screenshot.')"><img :src="forecast.image" :alt="forecast.id === 'intensity' ? 'Hurricane TRUDY (21E) Model Intensity Guidance initialized 00Z Oct 17 2026, supplied reference' : `${forecast.title} track forecast for Invest 96W`" /><span class="image-overlay"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge</span></button>
+              <Wnc2Ensemble v-if="forecast.id === 'wnc2'" :active="!weatherToolsOpen && !forecastModelsOpen" />
+              <Wm6Ensemble v-else-if="forecast.id === 'wm6'" :active="!weatherToolsOpen && !forecastModelsOpen" />
+              <IntensityGuidance v-else-if="forecast.id === 'intensity'" :active="!weatherToolsOpen && !forecastModelsOpen" />
+              <button v-else-if="forecast.image" class="image-button forecast-image" :aria-label="`Enlarge ${forecast.title} reference image`" @click="openImage(forecast.title, forecast.image, 'Static 06z reference image from the supplied screenshot.')"><img :src="forecast.image" :alt="`${forecast.title} track forecast for Invest 96W`" /><span class="image-overlay"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge</span></button>
               <div v-else class="missing-image"><span class="material-icons-round" aria-hidden="true">image_not_supported</span><strong>Image unavailable</strong></div>
-              <div v-if="forecast.id === 'intensity'" class="intensity-reference-note"><p>提供的 TRUDY（21E）強度指引圖 · 2026-10-17 00Z · 靜態參考，非即時更新，也不是 96W 的預報。</p><a href="/images/21E-intensity-reference.png" download="21E-TRUDY-intensity-2026101700-reference.png">Download PNG · 手機可開啟大圖後長按儲存</a></div>
+              <details v-if="forecast.id === 'intensity'" class="intensity-reference-note"><summary>歷史 TRUDY 參考圖（不是上方即時均值）</summary><p>提供的 TRUDY（21E）強度指引圖 · 2026-10-17 00Z · 靜態參考，非即時更新，也不是 96W 的預報。</p><button class="text-button" aria-label="Enlarge Intensity Guidance reference image" @click="openImage('Intensity Guidance · historical reference', '/images/21E-intensity-reference.png', 'Supplied reference: Hurricane TRUDY (21E), initialized 00Z Oct 17, 2026. Not live and not an intensity forecast for Invest 96W.')">開啟歷史原圖 ↗</button><a href="/images/21E-intensity-reference.png" download="21E-TRUDY-intensity-2026101700-reference.png">Download reference PNG</a></details>
               <div v-if="forecast.id === 'global'" class="cycle-selector" :aria-label="`${forecast.title} model cycle`"><button v-for="cycle in cycles" :key="cycle" :class="{ selected: forecast.cycle === cycle }" :aria-pressed="forecast.cycle === cycle" @click="selectCycle(forecast, cycle)">{{ cycle }}</button></div>
               <p v-if="forecast.id === 'global'" class="cycle-note">{{ forecast.cycle === '06z' ? '06z screenshot reference' : `${forecast.cycle} unavailable · showing 06z reference` }}</p>
             </article>
@@ -188,7 +190,7 @@ onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener(
         <div class="dialog-heading"><h2 id="dialog-title">{{ preview?.title ?? (settingsOpen ? 'Display settings' : 'Model acronyms') }}</h2><button class="icon-button" aria-label="Close dialog" autofocus @click="closeDialogs"><span class="material-icons-round" aria-hidden="true">close</span></button></div>
         <template v-if="preview"><img class="preview-image" :src="preview.image" :alt="preview.title" /><p class="dialog-copy">{{ preview.description }}</p></template>
         <template v-else-if="settingsOpen"><label class="setting-row"><span><strong>Compact spacing</strong><small>Reduce padding between information panels.</small></span><input v-model="compact" type="checkbox" /></label><p class="dialog-copy">This preview uses static reference images. Display settings do not change the underlying data.</p></template>
-        <template v-else><dl class="acronyms"><div><dt>WNC2 / WN2-C</dt><dd>WeatherNext 2 Cyclones · Google's AI cyclone forecasting model (FNV3.2)</dd></div><div><dt>WM-6</dt><dd>WindBorne's tropical cyclone ensemble tracker with locally classified intensity-colored member paths and provider mean; save charts as PNG or SVG</dd></div><div><dt>GeoJSON</dt><dd>Map-ready FeatureCollection containing paths, forecast points and landfalls; cone features are excluded. Landfalls are not displayed on the chart.</dd></div><div><dt>00z / 06z / 12z / 18z</dt><dd>Model initialization times in UTC</dd></div></dl></template>
+        <template v-else><dl class="acronyms"><div><dt>WNC2 / WN2-C</dt><dd>WeatherNext 2 Cyclones · Google's AI cyclone forecasting model (FNV3.2)</dd></div><div><dt>WNC3 / WN3C</dt><dd>WeatherNext WNV3 cyclone CSV; intensity uses a separately labelled conditional member mean.</dd></div><div><dt>WM-6</dt><dd>WindBorne's tropical cyclone ensemble tracker with locally classified intensity-colored member paths and provider mean; save charts as PNG or SVG</dd></div><div><dt>GeoJSON</dt><dd>Map-ready FeatureCollection containing paths, forecast points and landfalls; cone features are excluded. Landfalls are not displayed on the chart.</dd></div><div><dt>00z / 06z / 12z / 18z</dt><dd>Conventional UTC query slots / WeatherNext initialization. WM-6 provider versions may be hourly; forecast_zero independently anchors forecast lead.</dd></div></dl></template>
         <div class="dialog-actions"><button class="filled-button" @click="closeDialogs">Done</button></div>
       </dialog>
     </div>

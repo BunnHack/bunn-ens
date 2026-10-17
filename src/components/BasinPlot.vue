@@ -5,7 +5,7 @@ import { basinTracks, pointInRegion, pressureCategories, pressureColor, regionLo
 import { geographicPaths, visiblePlaces } from '../data/map-geography'
 import type { ProbabilityField } from '../data/probability'
 
-const props = withDefaults(defineProps<{ catalog: Catalog; region: BasinRegion; theme: MapTheme; modelLabel?: string; windMode?: boolean; mean?: MeanPoint[]; meanLabel?: string; storm?: string; probability?: ProbabilityField; leadStart?: number; leadEnd?: number; showLeadLabels?: boolean; timeAnchor?: string }>(), { modelLabel: 'WNC2', windMode: false, mean: () => [], meanLabel: 'Ensemble mean', storm: '', leadStart: 0, leadEnd: 312, showLeadLabels: false, timeAnchor: '' })
+const props = withDefaults(defineProps<{ catalog: Catalog; region: BasinRegion; theme: MapTheme; modelLabel?: string; windMode?: boolean; mean?: MeanPoint[]; meanLabel?: string; storm?: string; probability?: ProbabilityField; leadStart?: number; leadEnd?: number; showLeadLabels?: boolean; timeAnchor?: string; association?: string }>(), { modelLabel: 'WNC2', windMode: false, mean: () => [], meanLabel: 'Ensemble mean', storm: '', leadStart: 0, leadEnd: 312, showLeadLabels: false, timeAnchor: '', association: '' })
 const clipId = `basin-${useId().replace(/:/g, '')}`
 const colors = computed(() => props.theme === 'dark' ? { sea: '#182330', land: '#354455', line: '#8794a2', text: '#e3edf5', grid: '#495b6d' } : props.theme === 'color' ? { sea: '#e8f5fc', land: '#d9e8ce', line: '#829786', text: '#344b60', grid: '#b7d0df' } : { sea: '#fff', land: '#e9ecef', line: '#a8adb3', text: '#333', grid: '#c6cbd0' })
 const rawX = (lon: number) => 62 + (lon - props.region.west) / (props.region.east - props.region.west) * 1110
@@ -14,7 +14,7 @@ const y = (lat: number) => 85 + (props.region.north - lat) / (props.region.north
 const tracks = computed(() => basinTracks(props.catalog, props.region))
 const segments = computed(() => tracks.value.flatMap(track => track.points.slice(1).flatMap((point, index) => {
   const previous = track.points[index]!
-  if (Math.abs(regionLongitude(point.lon, props.region) - regionLongitude(previous.lon, props.region)) > 180) return []
+  if (Math.abs(regionLongitude(point.lon, props.region) - regionLongitude(previous.lon, props.region)) > 180 || point.leadHours <= previous.leadHours || point.leadHours - previous.leadHours > 12) return []
   return [{ key: `${track.key}:${point.leadHours}`, point, previous }]
 })))
 const visiblePoints = computed(() => tracks.value.flatMap(track => track.points.filter(point => pointInRegion(point, props.region))))
@@ -44,7 +44,7 @@ const peaks = computed(() => {
 const peakSpacing = computed(() => Math.min(15, 800 / Math.max(1, Math.min(64, peaks.value.length))))
 const svgWidth = computed(() => props.windMode ? 1200 + 180 * Math.max(1, Math.ceil(peaks.value.length / 64)) : 1200)
 const windColor = (wind: number) => windCategory(wind)?.color ?? '#7b8798'
-const meanSegments = computed(() => props.mean.slice(1).flatMap((point, i) => Math.abs(regionLongitude(point.lon, props.region) - regionLongitude(props.mean[i]!.lon, props.region)) > 180 ? [] : [{ point, previous: props.mean[i]! }]))
+const meanSegments = computed(() => props.mean.slice(1).flatMap((point, i) => Math.abs(regionLongitude(point.lon, props.region) - regionLongitude(props.mean[i]!.lon, props.region)) > 180 || point.leadHours <= props.mean[i]!.leadHours || point.leadHours - props.mean[i]!.leadHours > 12 ? [] : [{ point, previous: props.mean[i]! }]))
 const windowLabel = computed(() => `${props.probability?.minLead ?? props.leadStart}–${props.probability?.maxLead ?? props.leadEnd}h`)
 const leadLabels = computed(() => {
   const chosen = new Set(peaks.value.filter((_, i) => i % Math.max(1, Math.ceil(peaks.value.length / 48)) === 0).map(peak => peak.sample))
@@ -57,11 +57,11 @@ const probabilityPaths = computed(() => props.probability?.contours.map(band => 
 <template>
   <svg class="basin-map" :viewBox="`0 0 ${svgWidth} 970`" xmlns="http://www.w3.org/2000/svg" role="img" :aria-label="`${modelLabel} ${storm || region.label}系集預報 ${catalog.initTime} UTC`" :style="{ background: colors.sea, color: colors.text }">
     <title>{{ modelLabel }} {{ probability ? 'Local 120 km Passage Probability' : 'Ensemble Forecast' }} · {{ storm || region.label }} · {{ windowLabel }}</title>
-    <desc>{{ probability ? `Local ensemble fraction passing within ${probability.radiusKm} km during ${windowLabel}. ${probability.allSystems ? 'All-system union: independent track IDs remain separate and never connected; each member contributes at most one hit per location across all its storms.' : 'Single matched cyclone.'} Full ensemble denominator ${probability.denominator}; tracked members ${probability.trackedMembers}. Each member counted once, spherical interpolation, both time boundaries clipped, gaps over 12h not connected. Missing/untracked members do not count as hits; this does not imply no risk. View may focus on the ≥5% corridor. City percentages refer to city-centre points, not county-wide coverage. Not an official probability or warning.` : `Independent member/track-ID paths during ${windowLabel}; no cross-storm merging. Original winds in kt, unknown values gray. Peak winds are per member across window tracks touching this map; labels sample members at 24h intervals. City codes are display abbreviations, not station identifiers. Natural Earth; not an official warning.` }}</desc>
+    <desc>{{ association }} {{ probability ? `Local ensemble fraction passing within ${probability.radiusKm} km during ${windowLabel}. ${association ? 'Selected local candidate group only; independent original IDs, not a provider-matched storm. Group membership is not genesis probability.' : probability.allSystems ? 'All-system union: independent track IDs remain separate and never connected; each member contributes at most one hit per location across all its storms.' : 'Single matched cyclone.'} Full ensemble denominator ${probability.denominator}; tracked members ${probability.trackedMembers}. Each member counted once, spherical interpolation, both time boundaries clipped, gaps over 12h not connected. Missing/untracked members do not count as hits; this does not imply no risk. View may focus on the ≥5% corridor. City percentages refer to city-centre points, not county-wide coverage. Not an official probability or warning.` : `Independent member/track-ID paths during ${windowLabel}; no cross-storm merging. Original winds in kt, unknown values gray. Peak winds are per member across window tracks touching this map; labels sample members at 24h intervals. City codes are display abbreviations, not station identifiers. Natural Earth; not an official warning.` }}</desc>
     <rect :width="svgWidth" height="970" :fill="colors.sea" />
     <defs><clipPath :id="clipId"><rect x="62" y="85" width="1110" height="815" /></clipPath></defs>
     <text x="62" y="33" font-size="20" fill="currentColor">{{ modelLabel }} {{ probability ? 'Local Passage Probability' : 'Ensemble Forecast' }} · {{ storm || region.label }} ({{ windowLabel }}){{ probability ? ` · within ${probability.radiusKm} km` : '' }}</text>
-    <text x="62" y="60" font-size="16" fill="currentColor">Initial time: {{ catalog.initTime }} UTC{{ timeAnchor ? ` · Lead anchor: ${timeAnchor}` : '' }}</text>
+    <text x="62" y="60" font-size="16" fill="currentColor">{{ timeAnchor ? `Forecast base: ${timeAnchor} · Provider run: ${catalog.initTime} UTC` : `Initial time: ${catalog.initTime} UTC` }}</text>
     <text x="1170" y="76" text-anchor="end" font-size="16" fill="currentColor">{{ probability ? `N=${probability.denominator} · ${probability.trackedMembers} tracked members · ${windowLabel}` : `min. MSLP: ${minPressure} hPa` }}</text>
     <g :clip-path="`url(#${clipId})`">
       <rect x="62" y="85" width="1110" height="815" :fill="colors.sea" />
@@ -83,7 +83,7 @@ const probabilityPaths = computed(() => props.probability?.contours.map(band => 
     <g v-if="windMode" class="potential-member-peaks"><text v-for="(peak, i) in peaks" :key="peak.sample" :x="1188 + Math.floor(i / 64) * 180" :y="100 + (i % 64) * peakSpacing" :font-size="Math.min(14, peakSpacing)" :fill="windColor(peak.wind)">Member {{ peak.sample }}: {{ Number.isFinite(peak.wind) ? peak.wind.toFixed(1) : '—' }} kt</text></g>
     <g v-if="probability" class="passage-city-labels"><g v-for="(city, i) in probability.cities" :key="city.name" :transform="`translate(${76 + i * 154},866)`"><rect width="145" height="27" rx="13" fill="#f05b49" /><text x="72" y="18" text-anchor="middle" font-size="14" fill="white">{{ city.code ?? city.name }} {{ Math.round(city.percent) }}%</text><title>{{ city.enName ?? city.name }} / {{ city.name }} point {{ city.lat }},{{ city.lon }} · {{ city.hits }}/{{ probability.denominator }} members within {{ probability.radiusKm }} km; not county-wide probability</title></g></g>
     <text v-if="!visiblePoints.length" x="615" y="510" text-anchor="middle" font-size="25" fill="currentColor">此圖域沒有 {{ windowLabel }} 可用路徑；不代表零風險</text>
-    <text x="62" y="951" font-size="15" fill="currentColor">{{ modelLabel }} · {{ probability ? `Local estimate, not official · N=${probability.denominator} · ${windowLabel} · ${probability.radiusKm} km` : `${windMode ? peaks.length : catalog.totalSamples} members · ${windowLabel} · ${windMode ? 'wind-colored · ' + meanLabel : 'pressure-colored guidance'}` }} · Natural Earth 1:50m</text>
+    <text x="62" y="951" font-size="15" fill="currentColor">{{ modelLabel }} · {{ association ? 'Local association / conditional mean (unverified) · ' : '' }}{{ probability ? `Local estimate, not official · N=${probability.denominator} · ${windowLabel} · ${probability.radiusKm} km` : `${windMode ? peaks.length : catalog.totalSamples} members · ${windowLabel} · ${windMode ? 'wind-colored · ' + meanLabel : 'pressure-colored guidance'}` }} · Natural Earth 1:50m</text>
   </svg>
 </template>
 

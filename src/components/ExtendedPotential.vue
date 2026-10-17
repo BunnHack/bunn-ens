@@ -7,12 +7,14 @@ import { cycloneCatalog, cycloneChoices, cycloneMean, loadPotential, potentialMo
 import { passageField } from '../data/probability'
 import { potentialDenominator, rangePresets, windowCatalog, windowValidTimes } from '../data/extended-potential'
 import type { Catalog } from '../data/wnc2'
+import { associationRules, candidateGroups, candidateMean } from '../data/candidate-groups'
+import { clearRequestCache } from '../data/request-cache'
 
 withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 const models = potentialModels.filter(item => ['wn2','wn3','wm6'].includes(item.id)).map(item => ({ ...item, id: item.id as PotentialModel, source: item.id === 'wm6' ? 'WindBorne WM-6 API' : `Google Weather Lab · ${item.id === 'wn3' ? 'WNV3' : 'FNV3P1'}` }))
 const model = ref<PotentialModel>('wn2'), run = ref('latest'), storm = ref('all')
 const start = ref(120), end = ref(312), product = ref<'ensemble' | 'probability'>('ensemble')
-const theme = ref<MapTheme>('light'), showInfo = ref(true), showHours = ref(true)
+const theme = ref<MapTheme>('light'), showInfo = ref(true), showHours = ref(true), groupCandidates = ref(true)
 const regions: BasinRegion[] = [{ id: 'extended-wp', label: '西太平洋／跨日期線', west: 100, east: 190, south: 0, north: 50 }, ...basinRegions]
 const regionId = ref('extended-wp')
 const region = computed(() => regions.find(item => item.id === regionId.value) ?? regions[0]!)
@@ -21,25 +23,29 @@ let controller: AbortController | undefined, revision = 0
 const modelInfo = computed(() => models.find(item => item.id === model.value)!)
 const title = computed(() => rangePresets.find(item => item.start === start.value && item.end === end.value)?.label ?? '自訂時窗襲擊潛勢')
 const windowLabel = computed(() => `${start.value}–${end.value}h`)
-const allChoices = computed(() => result.value ? cycloneChoices(result.value) : [])
+const clustering = computed<ReturnType<typeof candidateGroups>>(() => result.value && groupCandidates.value ? candidateGroups(result.value.catalog) : { groups: [], minimumMembers: 3 })
+const selectedGroup = computed(() => clustering.value.groups.find(item => item.key === storm.value))
+const association = computed(() => selectedGroup.value ? `${selectedGroup.value.label}: local geometric association, not provider storm identity. One independent trajectory per member; original sample/track IDs retained. Conditional group mean, not a full-ensemble storm consensus; association uncertainty is uncalibrated.` : '')
+const allChoices = computed(() => result.value ? [...cycloneChoices(result.value), ...clustering.value.groups] : [])
 const choices = computed(() => allChoices.value.filter(option => option.points.some(point => point.leadHours >= start.value && point.leadHours <= end.value && pointInRegion(point, region.value))))
 const matchedChoices = computed(() => choices.value.filter(option => option.kind === 'matched'))
-const generatedChoices = computed(() => choices.value.filter(option => option.kind !== 'matched'))
+const generatedChoices = computed(() => choices.value.filter(option => option.kind !== 'matched' && option.kind !== 'cluster'))
+const groupChoices = computed(() => choices.value.filter(option => option.kind === 'cluster'))
 const selectedChoice = computed(() => allChoices.value.find(item => item.key === storm.value))
-const fullCatalog = computed<Catalog | null>(() => !result.value ? null : storm.value === 'all' ? result.value.catalog : cycloneCatalog(result.value, storm.value))
+const fullCatalog = computed<Catalog | null>(() => !result.value ? null : storm.value === 'all' ? result.value.catalog : selectedGroup.value ? { ...result.value.catalog, points: selectedGroup.value.points } : cycloneCatalog(result.value, storm.value))
 const catalog = computed(() => fullCatalog.value ? windowCatalog(fullCatalog.value, start.value, end.value) : null)
 const visible = computed(() => catalog.value?.points.filter(point => pointInRegion(point, region.value)) ?? [])
 const trackCount = computed(() => new Set(visible.value.map(point => `${point.sample}:${point.trackId}`)).size)
 const memberCount = computed(() => new Set(visible.value.map(point => point.sample)).size)
-const mean = computed(() => !result.value || storm.value === 'all' || selectedChoice.value?.kind !== 'matched' ? [] : cycloneMean(result.value, storm.value).filter(point => point.leadHours >= start.value && point.leadHours <= end.value))
-const meanLabel = computed(() => storm.value === 'all' ? 'No cross-storm mean' : selectedChoice.value?.kind !== 'matched' ? 'Single-member candidate' : model.value === 'wm6' ? 'Provider mean' : 'Ensemble mean (≥25%)')
-const denominator = computed(() => { try { return result.value ? potentialDenominator(result.value, storm.value) : null } catch { return null } })
+const mean = computed(() => (!result.value || storm.value === 'all' ? [] : selectedGroup.value ? candidateMean(selectedGroup.value) : selectedChoice.value?.kind === 'matched' ? cycloneMean(result.value, storm.value) : []).filter(point => point.leadHours >= start.value && point.leadHours <= end.value))
+const meanLabel = computed(() => selectedGroup.value ? 'Local group mean' : storm.value === 'all' ? 'No cross-storm mean' : selectedChoice.value?.kind !== 'matched' ? 'Single-member candidate' : model.value === 'wm6' ? 'Provider mean' : 'Ensemble mean (≥25%)')
+const denominator = computed(() => { try { return result.value ? potentialDenominator(result.value, selectedGroup.value ? 'all' : storm.value) : null } catch { return null } })
 const probability = computed(() => {
   if (product.value !== 'probability' || !result.value || !fullCatalog.value) return { field: undefined, error: '' }
   try {
-    const size = potentialDenominator(result.value, storm.value)
+    const size = potentialDenominator(result.value, selectedGroup.value ? 'all' : storm.value)
     if (!catalog.value?.points.length) throw new Error('此時窗沒有可用路徑，不能解讀為零風險。')
-    return { field: passageField(fullCatalog.value, region.value, size, 120, end.value, { minLead: start.value, allSystems: storm.value === 'all' }), error: '' }
+    return { field: passageField(fullCatalog.value, region.value, size, 120, end.value, { minLead: start.value, allSystems: storm.value === 'all' || !!selectedGroup.value }), error: '' }
   } catch (cause) { return { field: undefined, error: cause instanceof Error ? cause.message : String(cause) } }
 })
 const validTimes = computed(() => { try { return result.value ? windowValidTimes(result.value, start.value, end.value) : [] } catch { return [] } })
@@ -71,6 +77,7 @@ async function refresh() {
   } catch (cause) { if (!signal.aborted && token === revision) error.value = cause instanceof Error ? cause.message : String(cause) }
   finally { if (token === revision) loading.value = false }
 }
+function reload() { clearRequestCache(fetch, model.value === 'wm6' ? '/api/wm6' : '/api/wnc2'); refresh() }
 function downloadCsv() {
   if (!catalog.value) return
   const url = URL.createObjectURL(new Blob([basinCsv(visible.value)], { type: 'text/csv;charset=utf-8' }))
@@ -88,24 +95,27 @@ onBeforeUnmount(() => { ++revision; controller?.abort() })
       <aside class="ep-navigation" aria-label="潛勢導覽">
         <details><summary>主要模式預報</summary><a href="#forecast-models">WM-6 全球格點預報 ↗</a></details>
         <details open><summary>熱帶氣旋預報</summary><div class="ep-model-list"><section v-for="item in models" :key="item.id"><h2>{{ item.label }}</h2><button v-for="preset in rangePresets" :key="preset.id" :class="{ selected: model === item.id && start === preset.start && end === preset.end }" :aria-pressed="model === item.id && start === preset.start && end === preset.end" @click="choose(item.id, preset)">{{ preset.label }} <small>{{ preset.start }}–{{ preset.end }}h</small></button></section><p>ECMWF 官方襲擊率、風圈／海溫／熱含量未接入，不以參考圖片代替。</p></div></details>
-        <details><summary>系集與資料說明</summary><p>獨立保留每個 sample／track ID。未匹配 WM-6 _M### 是真實單成員路徑，不虛構 C1 分組或均線。全系統模式沒有跨風暴平均。</p><a href="#weather-tools/basin">洋區系集預報</a><a href="#weather-tools/typhoon">單一氣旋詳細分析</a></details>
+        <details><summary>系集與資料說明</summary><p>保留每個 sample／track ID。本站 G 是可關閉的幾何候選分群，不是供應商或官方系統編號；每群每成員最多一條路徑，模糊配對不硬併。全部獨立路徑仍無跨風暴平均。</p><a href="#weather-tools/basin">洋區系集預報</a><a href="#weather-tools/typhoon">單一氣旋詳細分析</a></details>
       </aside>
       <section class="ep-workspace" aria-label="中遠期預報圖">
         <div class="ep-chart-heading"><strong>{{ modelInfo.label }} · {{ windowLabel }}</strong><span>{{ product === 'ensemble' ? '系集預報' : '本站機率預報' }}</span></div>
-        <div class="ep-storm-tabs" aria-label="氣旋選擇"><button :class="{ selected: storm === 'all' }" :aria-pressed="storm === 'all'" @click="storm = 'all'">全部獨立路徑</button><button v-for="option in matchedChoices" :key="option.key" :class="{ selected: storm === option.key }" :aria-pressed="storm === option.key" @click="storm = option.key">{{ option.label }}</button></div>
+        <div class="ep-storm-tabs" aria-label="氣旋選擇"><button :class="{ selected: storm === 'all' }" :aria-pressed="storm === 'all'" @click="storm = 'all'">全部獨立路徑</button><button v-for="option in matchedChoices" :key="option.key" :class="{ selected: storm === option.key }" :aria-pressed="storm === option.key" @click="storm = option.key">{{ option.label }}</button><button v-for="option in groupChoices" :key="option.key" class="ep-group-button" :class="{ selected: storm === option.key }" :aria-pressed="storm === option.key" @click="storm = option.key">{{ option.label }}</button></div>
+        <p v-if="groupCandidates && result" class="ep-status ep-cluster-note">{{ clustering.note || `本圖域／時窗有 ${groupChoices.length} 個本站候選群組，點選 G 按鈕只看該群。原始路徑不被改名或刪除；至少 ${clustering.minimumMembers} 個不同成員才成群。` }} 分群不是正式氣旋身分或生成機率；不同 G 也可能只是同一未來系統的不同情境，不把群數當風暴數。G 號僅屬所選模型／版本，不跨模型對號，遠期可能誤分／漏分。</p>
+        <details v-if="selectedGroup" class="ep-group-members ep-status"><summary>{{ selectedGroup.label }} · 原始成員與 ID（群組支持度非生成機率）</summary><p>群組均線是入群成員條件平均，不代表全體系集已同意有一個共同風暴。</p><ul><li v-for="track in selectedGroup.tracks" :key="`${track.sample}:${track.trackId}`">sample/member={{ track.sample }} · {{ track.trackId }}</li></ul></details>
         <p v-if="loading" class="ep-status" role="status">正在載入並固定 {{ modelInfo.label }} 初始化；不沿用其他模型或時次圖…</p>
-        <p v-if="error" class="ep-status ep-error" role="alert">{{ error }} <button @click="refresh">重試</button></p>
+        <p v-if="error" class="ep-status ep-error" role="alert">{{ error }} <button @click="reload">重試</button></p>
         <p v-if="result?.warning" class="ep-status ep-warning" role="status">資料狀態：{{ result.warning }}</p>
         <p v-if="result?.source === 'snapshot'" class="ep-status ep-warning">目前為有日期的本地備份，不是已確認的最新模式；請核對下方初始化與有效日期。</p>
         <p v-if="probability.error" class="ep-status ep-warning" role="status">{{ probability.error }} 不以空白或 100% 圖替代。</p>
-        <template v-if="result && catalog && active && !probability.error"><ChartFrame :filename="filename" :title="`${modelInfo.label} ${title} ${windowLabel}`"><BasinPlot :catalog="catalog" :region="region" :theme="theme" :model-label="modelInfo.label" :wind-mode="product === 'ensemble'" :storm="storm === 'all' ? 'All independent tracks' : selectedChoice?.label ?? storm" :mean="mean" :mean-label="meanLabel" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product === 'ensemble' && showHours" :time-anchor="result.wm6?.forecastZero ?? ''" /></ChartFrame></template>
+        <template v-if="result && catalog && active && !probability.error"><ChartFrame :filename="filename" :title="`${modelInfo.label} ${title} ${windowLabel}`"><BasinPlot :catalog="catalog" :region="region" :theme="theme" :model-label="modelInfo.label" :wind-mode="product === 'ensemble'" :storm="storm === 'all' ? 'All independent tracks' : selectedChoice?.label ?? storm" :mean="mean" :mean-label="meanLabel" :association="association" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product === 'ensemble' && showHours" :time-anchor="result.wm6?.forecastZero ?? ''" /></ChartFrame></template>
         <div v-else-if="!loading && !error && !probability.error" class="ep-empty">尚無可用圖資。</div>
-        <div v-if="result" class="ep-provenance"><p>Model init：<strong>{{ result.catalog.initTime }} UTC</strong><br v-if="result.wm6" /><span v-if="result.wm6">Forecast zero：{{ result.wm6.forecastZero }}（有效時間從此加算）</span></p><p v-if="validTimes.length">有效時間窗：{{ utc(validTimes[0]!) }} → {{ utc(validTimes[1]!) }}</p><p>{{ modelInfo.source }} · {{ result.source === 'remote' ? '供應商資料（以所示初始化為準）' : '明確標示的備份' }} · 查詢完成：{{ result.checkedAt }}（非模型起報時間）</p></div>
+        <div v-if="result" class="ep-provenance"><p>{{ result.wm6 ? 'Provider run（供應商版本）' : 'Model init' }}：<strong>{{ result.catalog.initTime }} UTC</strong><br v-if="result.wm6" /><span v-if="result.wm6">Forecast zero：{{ result.wm6.forecastZero }}（有效時間從此加算）</span></p><p v-if="validTimes.length">有效時間窗：{{ utc(validTimes[0]!) }} → {{ utc(validTimes[1]!) }}</p><p>{{ modelInfo.source }} · {{ result.source === 'remote' ? '供應商資料（核對所示版本與預報基準，非保證最新）' : '明確標示的備份' }} · 查詢完成：{{ result.checkedAt }}（非模型起報時間）</p></div>
         <section v-if="showInfo" class="ep-method"><h2>圖表說明</h2>
           <p>本頁近程定義 0–120h、中遠期 120–312h（第 5–13 天）。參考圖較長時效不代表本站有資料：本頁不補造 +312h 以後的點。數字時效標籤以 24h 間隔抽樣；右側為此時窗觸及圖域的每個成員原始風速峰值（kt）。</p>
-          <p>機率是選定時間窗內，路徑距某點 120 km 內的成員比例。全系統以「同一成員任一獨立氣旋通過」計一次；不連接不同 track ID，也不把生成候選拼成共同風暴。依球面最短弧裁切兩端時窗，不跨越大於 12h 缺口。</p>
+          <p>機率是選定時間窗內，路徑距某點 120 km 內的成員比例。全系統計算同一成員任一獨立氣旋通過；選本站 G 時只計該群，分母仍是完整系集，不是群組人數。每成員最多計一次，不連接不同 track ID；依球面最短弧裁切兩端時窗，不跨越大於 12h 缺口。</p>
+          <p>本站分群只關聯未匹配候選、不改官方 ID。首個保留路徑點的時效差 ≤{{ associationRules.startLagHours }}h（不是官方生成時間）；共同早期 {{ associationRules.comparisonHours }}h 內至少重疊 {{ associationRules.overlapHours }}h，以球面距離中位數 ≤{{ associationRules.medianKm }}km、80 分位 ≤{{ associationRules.p80Km }}km 配對。每條都必須直接符合中心參考路徑，不以無限制鏈結串成大群；同成員兩條同樣接近（差 &lt;{{ associationRules.ambiguityKm }}km）時不硬選。至少 3 位且達本批已辨識成員 5% 才成群。幾何相似不能證實共同風暴，可能分裂／混合不同未來系統。</p>
           <p>分母採 WM-6 供應商 ens_size，或 WeatherNext 完整 CSV 的成員數，不以畫面剩餘路徑數當分母。CSV 完全省略的成員無法恢復，可能使分母偏小、比例偏高；缺失或未追蹤到的路徑則可能使比例偏低。沒有路徑不代表安全。低於 5% 不畫等值線；城市徽章是市中心點，非縣市面積或受災率。</p>
-          <p>原始 max_wind_kt／min_mslp_hpa 不由氣壓換算或放大。均線僅對單一已匹配風暴提供；地名為英文顯示簡寫。Natural Earth 1:50m 僅提供簡化海岸與國界。非官方警報、襲擊率或校準風險。</p>
+          <p>原始 max_wind_kt／min_mslp_hpa 不由氣壓換算或放大。已匹配風暴沿用實際均線；本站 G 均線是入群成員的條件平均，逐時至少 3 位且達群組成員 25%，並非供應商平均／全系集共識；全部路徑仍不做跨風暴均線。地名為英文簡寫，Natural Earth 1:50m 僅為簡化海岸與國界。非官方警報、襲擊率或校準風險。</p>
         </section>
       </section>
       <aside class="ep-controls" aria-label="中遠期預報控制台">
@@ -114,10 +124,11 @@ onBeforeUnmount(() => { ++revision; controller?.abort() })
         <div class="ep-product-tabs"><button :class="{ selected: product === 'ensemble' }" :aria-pressed="product === 'ensemble'" @click="product = 'ensemble'">系集預報</button><button :class="{ selected: product === 'probability' }" :aria-pressed="product === 'probability'" @click="product = 'probability'">機率預報</button></div>
         <label>起始時效：+{{ start }}h<input :value="start" type="range" min="0" max="306" step="6" aria-label="Potential start hour" @input="changeStart" /></label><label>結束時效：+{{ end }}h<input :value="end" type="range" min="6" max="312" step="6" aria-label="Potential end hour" @input="changeEnd" /></label>
         <label>地圖區域<select v-model="regionId" aria-label="Potential region"><option v-for="item in regions" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
-        <label>獨立生成候選<select v-model="storm" aria-label="Potential cyclone"><option value="all">全部獨立路徑（不做共同均線）</option><optgroup v-if="matchedChoices.length" label="已匹配氣旋"><option v-for="item in matchedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="generatedChoices.length" label="各自為單一成員，不虛構共同風暴"><option v-for="item in generatedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup></select></label>
+        <label class="ep-check"><input v-model="groupCandidates" type="checkbox" aria-label="Associate candidate systems" />本站候選系統分群（非官方）</label>
+        <label>氣旋／候選群組<select v-model="storm" aria-label="Potential cyclone"><option value="all">全部獨立路徑（無共同均線）</option><optgroup v-if="matchedChoices.length" label="已匹配氣旋"><option v-for="item in matchedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="groupChoices.length" label="本站幾何候選群組（非官方身分）"><option v-for="item in groupChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="generatedChoices.length" label="保留原始獨立單成員路徑"><option v-for="item in generatedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup></select></label>
         <label>地圖主題<select v-model="theme" aria-label="Potential map theme"><option value="light">白底</option><option value="color">彩色</option><option value="dark">黑底</option></select></label><label class="ep-check"><input v-model="showHours" type="checkbox" />顯示抽樣時效標籤</label><label class="ep-check"><input v-model="showInfo" type="checkbox" />顯示詳細說明</label>
         <dl v-if="result" class="ep-counts"><div><dt>目前圖域／時窗</dt><dd>{{ trackCount }} 路徑 · {{ memberCount }} 成員 · {{ visible.length.toLocaleString() }} 點</dd></div><div><dt>全球原始資料</dt><dd>{{ result.catalog.points.length.toLocaleString() }} 點 · {{ result.catalog.totalSamples }} 已辨識成員</dd></div><div><dt>計算分母</dt><dd>{{ denominator ?? '不可用（未推測）' }}{{ denominator ? ' 成員；不按圖域縮小' : '' }}</dd></div><div v-if="result.wm6"><dt>WM-6 全部已載入</dt><dd>{{ result.wm6.matchedCount }} 已匹配／{{ result.wm6.unmatchedCount }} 未匹配單成員路徑</dd></div></dl>
-        <button class="ep-download" :disabled="!visible.length" @click="downloadCsv">下載圖域時窗 CSV</button><button class="ep-refresh" :disabled="loading" @click="refresh">重新查詢資料</button><a class="ep-detailed" href="#weather-tools/typhoon">單一風暴資料核對 ↗</a>
+        <button class="ep-download" :disabled="!visible.length" @click="downloadCsv">下載圖域時窗 CSV</button><button class="ep-refresh" :disabled="loading" @click="reload">重新查詢資料</button><a class="ep-detailed" href="#weather-tools/typhoon">單一風暴資料核對 ↗</a>
       </aside>
     </div>
   </section>
@@ -151,6 +162,7 @@ onBeforeUnmount(() => { ++revision; controller?.abort() })
 .ep-status { margin: 10px 16px; padding: 12px; color: #6d89a1; font-size: 12px; line-height: 1.8; background: #f1f6fb; border-radius: 5px; overflow-wrap: anywhere; }
 .ep-status button { color: #2784b8; background: transparent; padding: 6px 12px; }
 .ep-error { color: #a13a35; background: #fff0ed; }.ep-warning { color: #997b35; background: #fff9e8; }
+.ep-group-members ul { max-height: 180px; overflow: auto; padding-left: 18px; }.ep-group-members summary { cursor: pointer; }.ep-storm-tabs .ep-group-button { border: 1px dashed #b89b58; }.ep-cluster-note { background: #fff9e8; color: #8a7138; }
 .ep-empty { display: grid; place-items: center; min-height: 360px; color: #93a2b2; }
 .ep-provenance { padding: 0 16px; color: #8295a7; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
 .ep-provenance p { margin: 10px 0; }.ep-provenance strong { color: #55738b; }

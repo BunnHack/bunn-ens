@@ -4,7 +4,7 @@ import { computed, useId } from 'vue'
 import { categories, windCategory } from '../data/wnc2'
 import land from '../data/wm6-land.json'
 
-const props = defineProps<{ cyclone: Wm6Cyclone; initializationTime: string }>()
+const props = defineProps<{ cyclone: Wm6Cyclone; initializationTime: string; forecastZero?: string }>()
 const memberLines = computed(() => props.cyclone.members_path ?? [])
 const referenceLongitude = computed(() => props.cyclone.genesis?.longitude ?? props.cyclone.mean_path?.[0]?.longitude ?? props.cyclone.members_path?.[0]?.path[0]?.longitude ?? 0)
 const unwrap = (longitude: number) => referenceLongitude.value + ((longitude - referenceLongitude.value + 540) % 360) - 180
@@ -65,7 +65,7 @@ function pointLabel(point: Wm6Point) { return `+${point.forecast_hour}h · ${poi
       <defs><clipPath :id="clipId"><rect :x="view.left" :y="view.top" :width="view.width" :height="view.height" /></clipPath></defs>
       <rect width="2000" height="1580" fill="#eaf4fb" />
       <text x="85" y="46" font-size="32" fill="#294578">{{ cyclone.tropical_cyclone_id }}{{ cyclone.storm_name ? ` · ${cyclone.storm_name}` : '' }} · WM-6 forecast</text>
-      <text x="85" y="78" font-size="22" fill="#73839d">Initialization {{ initializationTime }} · {{ memberLines.length || cyclone.matched_members || '—' }} member tracks · intensity-colored</text>
+      <text x="85" y="78" font-size="22" fill="#73839d">Forecast base {{ forecastZero || 'unavailable' }} · provider run {{ initializationTime }} · {{ memberLines.length || cyclone.matched_members || '—' }} member tracks · intensity-colored</text>
       <g stroke="#b9d3e5" stroke-width="1" stroke-dasharray="4 6"><line v-for="longitude in longitudeTicks" :key="`lon-${longitude}`" :x1="x(longitude)" :x2="x(longitude)" :y1="view.top" :y2="view.top + view.height" /><line v-for="latitude in latitudeTicks" :key="`lat-${latitude}`" :x1="view.left" :x2="view.left + view.width" :y1="y(latitude)" :y2="y(latitude)" /></g>
       <g class="coastlines" :clip-path="`url(#${clipId})`"><path v-for="(polygon, index) in landPolygons" :key="index" :d="polygon" fill="#dce3d7" stroke="#759080" stroke-width="1.5" /></g>
       <g fill="#55718c" font-size="21"><text v-for="longitude in longitudeTicks" :key="`lon-label-${longitude}`" :x="x(longitude)" y="1510" text-anchor="middle">{{ longitudeLabel(longitude) }}</text><text v-for="latitude in latitudeTicks" :key="`lat-label-${latitude}`" x="70" :y="y(latitude) + 7" text-anchor="end">{{ latitudeLabel(latitude) }}</text></g>

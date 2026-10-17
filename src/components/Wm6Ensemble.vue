@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { loadWm6, loadWm6Cyclone, type Basin, type Wm6Cyclone, type Wm6CycloneDetail, type Wm6Response } from '../data/wm6'
 import { chartPng, serializeChart } from '../data/chart-image'
 import { windCategory } from '../data/wnc2'
 import Wm6Plot from './Wm6Plot.vue'
+import { clearRequestCache } from '../data/request-cache'
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
 const BASINS: Basin[] = ['AL', 'EP', 'CP', 'WP', 'NI', 'SI', 'AU', 'SP']
 const loading = ref(false)
@@ -22,7 +24,7 @@ const exporting = ref(false)
 const exportError = ref('')
 let controller: AbortController | undefined
 let detailController: AbortController | undefined
-let timer: ReturnType<typeof setInterval> | undefined
+let timer: ReturnType<typeof setInterval> | undefined, lastCheck = 0
 const storms = computed(() => response.value ? Object.values(response.value.tropical_cyclones) : [])
 const selectedSummary = computed(() => storms.value.find(storm => storm.tropical_cyclone_id === selectedId.value))
 const selected = computed<Wm6Cyclone | null>(() => detail.value ? { ...detail.value, path: detail.value.mean_path } : selectedSummary.value ?? null)
@@ -62,6 +64,8 @@ async function selectCyclone() {
   } finally { if (!active.signal.aborted) detailLoading.value = false }
 }
 async function refresh(clear = false) {
+  if (!props.active) return
+  lastCheck = Date.now()
   controller?.abort()
   cancelDetail()
   const active = new AbortController()
@@ -117,11 +121,16 @@ async function downloadChartPng() {
   } catch (cause) { exportError.value = cause instanceof Error ? cause.message : 'Unable to save WM-6 PNG' }
   finally { exporting.value = false }
 }
-function onVisibility() { if (document.visibilityState === 'visible' && !loading.value && !detailLoading.value) refresh() }
+function reload() { clearRequestCache(fetch, '/api/wm6'); refresh() }
+function onVisibility() { if (props.active && document.visibilityState === 'visible' && !loading.value && !detailLoading.value) refresh() }
 onMounted(() => {
   refresh()
-  timer = setInterval(() => { if (document.visibilityState !== 'hidden' && !loading.value && !detailLoading.value) refresh() }, 5 * 60_000)
+  timer = setInterval(() => { if (props.active && document.visibilityState !== 'hidden' && !loading.value && !detailLoading.value) refresh() }, 5 * 60_000)
   document.addEventListener('visibilitychange', onVisibility)
+})
+watch(() => props.active, active => {
+  if (active) { if (!response.value || (!!selectedId.value && !detail.value) || Date.now() - lastCheck >= 300000) refresh() }
+  else { if (loading.value || detailLoading.value) lastCheck = 0; controller?.abort(); detailController?.abort(); loading.value = false; detailLoading.value = false; enlarged.value = false }
 })
 onBeforeUnmount(() => { controller?.abort(); detailController?.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
@@ -130,13 +139,13 @@ onBeforeUnmount(() => { controller?.abort(); detailController?.abort(); clearInt
   <div ref="root" class="wm6-ensemble">
     <div class="wm6-controls">
       <label>Basin<select v-model="basin" aria-label="WM-6 basin" @change="refresh(true)"><option value="">All basins</option><option v-for="item in BASINS" :key="item" :value="item">{{ item }}</option></select></label>
-      <button class="text-button" :disabled="loading" @click="refresh()">Refresh latest</button>
+      <button class="text-button" :disabled="loading" @click="reload">Refresh latest</button>
       <label class="wm6-check"><input v-model="includeUnofficial" type="checkbox" @change="refresh(true)" /> Unofficial tracks</label>
     </div>
     <p v-if="loading" class="wm6-loading" role="status">Loading WM-6 latest run and member paths…</p>
-    <div v-if="error" class="wm6-error" role="alert">{{ error }}{{ response ? ' Previous list retained; not a fresh update.' : '' }} <button @click="refresh()">Retry</button></div>
+    <div v-if="error" class="wm6-error" role="alert">{{ error }}{{ response ? ' Previous list retained; not a fresh update.' : '' }} <button @click="reload">Retry</button></div>
     <template v-if="response">
-      <p class="wm6-meta">Initialization {{ response.initialization_time }} · forecast zero {{ response.forecast_zero }} · {{ response.total }} cyclones · checks every 5 minutes while visible</p>
+      <p class="wm6-meta">Forecast base {{ response.forecast_zero || 'unavailable' }} · provider run {{ response.initialization_time }} · {{ response.total }} cyclones · checks every 5 minutes while this panel is active</p>
       <p v-if="!storms.length" class="wm6-meta">No cyclones in this run / basin.</p>
       <label v-else class="wm6-storm-field">Cyclone<select v-model="selectedId" aria-label="WM-6 cyclone" @change="selectCyclone"><option v-for="storm in storms" :key="storm.tropical_cyclone_id" :value="storm.tropical_cyclone_id">{{ storm.tropical_cyclone_id }}{{ storm.storm_name ? ` · ${storm.storm_name}` : '' }}</option></select></label>
       <p v-if="detailLoading" class="wm6-loading" role="status">Loading individual ensemble member tracks…</p>
@@ -145,17 +154,17 @@ onBeforeUnmount(() => { controller?.abort(); detailController?.abort(); clearInt
         <div><strong>{{ selected.tropical_cyclone_id }}</strong><span>{{ selected.storm_name ?? 'Unnamed system' }}</span></div>
         <dl><div><dt>Peak wind</dt><dd>{{ maxWind }}</dd></div><div><dt>Basins</dt><dd>{{ selected.basins.join(', ') }}</dd></div></dl>
         <div v-if="detail" class="wm6-details"><span>Member tracks: {{ memberCount }} / {{ detail.ens_size ?? '—' }} ensemble size</span><span>Mean: {{ detail.mean_path.length }} points</span></div>
-        <Wm6Plot v-if="detail" :cyclone="selected" :initialization-time="detail.initialization_time" />
+        <Wm6Plot v-if="detail" :cyclone="selected" :initialization-time="detail.initialization_time" :forecast-zero="detail.forecast_zero" />
         <button v-if="detail" class="text-button" @click="enlarged = true">Enlarge member chart</button>
       </div>
       <div class="wm6-actions"><button class="text-button" :disabled="exporting" @click="downloadChartPng">{{ exporting ? 'Rendering PNG…' : 'Save chart PNG' }}</button><button class="text-button" @click="downloadChartSvg">Save chart SVG</button><button class="text-button" @click="downloadGeoJson">Download GeoJSON</button><a class="text-button" :href="geojsonUrl" target="_blank" rel="noopener noreferrer">Open map data ↗</a></div>
     </template>
     <p v-if="exportError" class="wm6-error" role="alert">{{ exportError }}</p>
-    <p class="wm6-source">Intensity is calculated locally from max_wind_kt using the shared WNC2 categories (C1 ≥64, C2 ≥83, C3 ≥96, C4 ≥113, C5 ≥137 kt), ignoring provider storm_type. Gray = wind unavailable. No wind rescaling or invented intensification. Thick dark line: provider mean. Natural Earth 1:110m coastlines. Landfall points and cones are hidden.</p>
+    <p class="wm6-source">Wind categories are assigned locally from raw max_wind_kt using the shared WNC2 categories (C1 ≥64, C2 ≥83, C3 ≥96, C4 ≥113, C5 ≥137 kt), ignoring provider storm_type. Gray = wind unavailable. No wind rescaling or invented intensification. Thick dark line: provider mean. Natural Earth 1:110m coastlines. Landfall points and cones are hidden.</p>
     <div v-if="enlarged && detail && selected" class="dialog-backdrop" @click.self="enlarged = false" @keydown.esc="enlarged = false">
       <dialog open class="dialog wm6-dialog" aria-modal="true" aria-labelledby="wm6-dialog-title">
         <div class="dialog-heading"><h2 id="wm6-dialog-title">WM-6 · {{ selected.tropical_cyclone_id }} · {{ memberCount }} members</h2><button class="icon-button" aria-label="Close WM-6 chart" @click="enlarged = false">×</button></div>
-        <Wm6Plot :cyclone="selected" :initialization-time="detail.initialization_time" />
+        <Wm6Plot :cyclone="selected" :initialization-time="detail.initialization_time" :forecast-zero="detail.forecast_zero" />
         <div class="wm6-image-actions"><button class="text-button" :disabled="exporting" @click="downloadChartPng">{{ exporting ? 'Rendering PNG…' : 'Save chart PNG' }}</button><button class="text-button" @click="downloadChartSvg">Save chart SVG</button></div>
         <p class="dialog-copy">WNC2 wind categories, individual member paths and provider mean. Landfall points and cones are hidden. AI forecast guidance, not an official warning.</p>
       </dialog>
