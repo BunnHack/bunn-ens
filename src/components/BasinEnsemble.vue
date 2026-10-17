@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { REFRESH_MS } from '../data/wnc2'
 import { basinCsv, basinRegions, pointInRegion, type MapTheme } from '../data/basin'
-import { cycloneCatalog, cycloneChoices, cycloneMean, cycloneRegion, loadPotential, potentialModels, type PotentialModel, type PotentialResult } from '../data/potential'
+import { cycloneCatalog, cycloneChoices, cycloneMean, cycloneRegion, isUnmatchedWm6Id, loadPotential, potentialModels, type PotentialModel, type PotentialResult } from '../data/potential'
 import BasinPlot from './BasinPlot.vue'
+import Wm6DataAudit from './Wm6DataAudit.vue'
 
 const props = withDefaults(defineProps<{ mode?: 'basin' | 'typhoon' }>(), { mode: 'basin' })
 const sections = ['主要模式預報', '主要模式誤差', '防御參考', '海洋預報', '1000-Member 產品']
@@ -11,6 +12,7 @@ const model = ref(props.mode === 'typhoon' ? 'wn2' : 'wn3')
 const theme = ref<MapTheme>('light')
 const regionId = ref('china')
 const runChoice = ref('latest')
+const includeUnofficial = ref(true)
 const selectedStorm = ref('')
 const forecastType = ref('ensemble')
 const products = [{ id: 'ensemble', label: '系集預報' }, { id: 'probability', label: '機率預報' }, { id: 'sst', label: '系集海溫' }, { id: 'heat', label: '系集熱焓' }]
@@ -27,6 +29,12 @@ const plotted = computed(() => result.value ? props.mode === 'typhoon' ? cyclone
 const mapRegion = computed(() => props.mode === 'typhoon' && plotted.value ? cycloneRegion(plotted.value) : region.value)
 const visiblePoints = computed(() => plotted.value?.points.filter(point => props.mode === 'typhoon' || pointInRegion(point, region.value)) ?? [])
 const mean = computed(() => result.value && props.mode === 'typhoon' ? cycloneMean(result.value, selectedStorm.value) : [])
+const selectedKind = computed(() => options.value.find(option => option.key === selectedStorm.value)?.kind)
+const meanLabel = computed(() => model.value === 'wm6' ? selectedKind.value === 'unmatched' ? 'Single member · no mean' : 'Provider mean' : 'Local mean ≥25% members')
+const wm6Counts = computed(() => {
+  const ids = [...new Set(visiblePoints.value.map(point => point.trackId))]
+  return { matched: ids.filter(id => !isUnmatchedWm6Id(id)).length, unmatched: ids.filter(isUnmatchedWm6Id).length }
+})
 const runLabel = (date: string, cycle: string) => date.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1年$2月$3日') + cycle.slice(0, 2) + '時 (UTC)'
 const currentTime = computed(() => result.value ? runLabel(result.value.catalog.initTime.slice(0, 10), result.value.catalog.initTime.slice(11, 13)) : '尚無資料')
 const availableRuns = computed(() => {
@@ -52,11 +60,11 @@ async function refresh() {
   if (!supported.value) return
   const active = new AbortController(); controller = active; loading.value = true
   try {
-    const data = await loadPotential(model.value as PotentialModel, runChoice.value, active.signal)
+    const data = await loadPotential(model.value as PotentialModel, runChoice.value, active.signal, fetch, { includeUnofficial: includeUnofficial.value })
     if (active.signal.aborted) return
     result.value = data
     const choices = cycloneChoices(data)
-    if (!choices.some(item => item.key === selectedStorm.value)) selectedStorm.value = choices.find(item => item.key === 'WP292026')?.key ?? choices.find(item => !item.key.startsWith('genesis:'))?.key ?? choices[0]?.key ?? ''
+    if (!choices.some(item => item.key === selectedStorm.value)) selectedStorm.value = choices.find(item => item.key === 'WP292026')?.key ?? choices.find(item => item.kind === 'matched')?.key ?? choices[0]?.key ?? ''
   } catch (cause) { if (!active.signal.aborted) error.value = cause instanceof Error ? cause.message : '無法載入所選時次' }
   finally { if (!active.signal.aborted) loading.value = false }
 }
@@ -99,10 +107,12 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
         <div v-else-if="!supported" class="basin-empty"><h2>{{ selectedModel.label }} 尚未接入</h2><p>不會以其他模式或舊圖片代替。</p><button @click="chooseModel('wn3')">查看 WNC3 預報</button></div>
         <div v-else-if="mode === 'typhoon' && forecastType !== 'ensemble'" class="basin-empty"><h2>{{ products.find(item => item.id === forecastType)?.label }} 尚未接入</h2><p>{{ forecastType === 'probability' ? '目前沒有定義門檻、時窗與分母的襲擊機率資料，系集線條不能當作官方機率。' : '目前資料源不含海溫或海洋熱焓場，不以風速或氣壓替代。' }}</p><button @click="forecastType = 'ensemble'">返回系集預報</button></div>
         <template v-else-if="result && plotted">
-          <BasinPlot :catalog="plotted" :region="mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="mean" :mean-label="model === 'wm6' ? 'Provider mean' : 'Local mean ≥25% members'" />
+          <BasinPlot :catalog="plotted" :region="mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="mean" :mean-label="meanLabel" />
           <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ result.source === 'snapshot' ? '離線快照 · 未確認為最新資料' : model === 'wm6' ? '已連接 WM-6 真實成員路徑' : '已連接 WeatherNext CSV' }} · {{ currentTime }} · {{ visiblePoints.length }} 個預報點 · 0–312h</p>
+          <p v-if="result.wm6" class="basin-data-note wm6-track-counts">本次上游：{{ result.wm6.matchedCount }} 個匹配氣旋、{{ result.wm6.unmatchedCount }} 條未匹配成員路徑。當前圖中：{{ wm6Counts.matched }} 個匹配氣旋、{{ wm6Counts.unmatched }} 條未匹配路徑。{{ includeUnofficial ? '未匹配路徑是單一成員的生成候選，不代表同樣數目的獨立風暴，也不保證成颱；未自動併入命名氣旋。' : '未匹配路徑已隱藏。' }} 時效基準：{{ result.wm6.forecastZero }}。</p>
+          <Wm6DataAudit v-if="result.wm6" :points="visiblePoints" :forecast-zero="result.wm6.forecastZero" />
           <p v-if="result.warning" class="basin-data-note" role="status">{{ result.warning }}</p>
-          <p v-if="mode === 'typhoon'" class="basin-data-note">顏色使用原始風速與本站風級，未放大強度。{{ model === 'wm6' ? '黑線為供應商平均路徑。' : '黑線為本站計算的平均路徑，僅保留至少 25% 成員存在的時效；數字 genesis ID 僅屬單一成員，不跨成員合併。' }}</p>
+          <p v-if="mode === 'typhoon'" class="basin-data-note">顏色使用原始風速與本站風級，未放大強度。{{ model === 'wm6' ? selectedKind === 'unmatched' ? '此為未匹配單成員路徑，沒有系集平均線。' : '深色線為供應商平均路徑。' : '深色線為本站計算的平均路徑，僅保留至少 25% 成員存在的時效；數字 genesis ID 僅屬單一成員，不跨成員合併。' }}</p>
           <a v-if="result.url" class="basin-source" :href="result.url" target="_blank" rel="noopener noreferrer">原始{{ model === 'wm6' ? 'JSON' : 'CSV' }} 資料來源 ↗</a>
         </template>
       </div>
@@ -111,9 +121,10 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
         <h2>控制台</h2>
         <button v-if="mode === 'basin'" class="basin-csv" :disabled="!supported || loading || !visiblePoints.length" @click="downloadCsv">下載目前洋區CSV文件</button>
         <label class="basin-run">起報時間<select v-model="runChoice" :disabled="!supported" aria-label="洋區起報時間"><option value="latest">最新已發布時次 (UTC)</option><option v-for="run in availableRuns" :key="run.value" :value="run.value">{{ run.label }}</option></select></label>
+        <label v-if="model === 'wm6'" class="wm6-unofficial-toggle"><input v-model="includeUnofficial" type="checkbox" @change="refresh" /> 顯示未匹配成員路徑（生成候選）</label>
         <template v-if="mode === 'typhoon'">
           <fieldset class="potential-products"><legend>預報類型</legend><div class="basin-buttons"><button v-for="product in products" :key="product.id" :class="{ selected: forecastType === product.id }" :aria-pressed="forecastType === product.id" @click="forecastType = product.id">{{ product.label }}</button></div></fieldset>
-          <fieldset class="potential-storms"><legend>台風編號 / 單成員生成路徑</legend><div class="basin-buttons"><button v-for="option in options.filter(item => !item.key.startsWith('genesis:'))" :key="option.key" :class="{ selected: selectedStorm === option.key }" :aria-pressed="selectedStorm === option.key" @click="selectedStorm = option.key">{{ option.key }}</button></div><label v-if="options.some(item => item.key.startsWith('genesis:'))" class="basin-run">其他路徑<select v-model="selectedStorm" aria-label="氣旋與單成員生成路徑"><option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}</option></select></label><p v-if="!options.length" class="basin-help">目前沒有可選氣旋。</p></fieldset>
+          <fieldset class="potential-storms"><legend>台風編號 / 單成員生成路徑</legend><div class="basin-buttons"><button v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :class="{ selected: selectedStorm === option.key }" :aria-pressed="selectedStorm === option.key" @click="selectedStorm = option.key">{{ option.key }}</button></div><label v-if="options.some(item => item.kind !== 'matched')" class="basin-run">其他生成候選（獨立單成員）<select v-model="selectedStorm" aria-label="氣旋與單成員生成路徑"><optgroup label="已匹配氣旋"><option v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :value="option.key">{{ option.label }}</option></optgroup><optgroup label="未匹配 / 單成員生成路徑"><option v-for="option in options.filter(item => item.kind !== 'matched')" :key="option.key" :value="option.key">{{ option.label }}</option></optgroup></select></label><p v-if="!options.length" class="basin-help">目前沒有可選氣旋。</p></fieldset>
         </template>
         <template v-else>
           <fieldset><legend>主題選擇</legend><div class="basin-buttons"><button v-for="item in ([['light', '淺色'], ['color', '彩色'], ['dark', '深色']] as const)" :key="item[0]" :class="{ selected: theme === item[0] }" :aria-pressed="theme === item[0]" @click="theme = item[0]">{{ item[1] }}</button></div></fieldset>
@@ -122,7 +133,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
         <div class="basin-current"><h3>當前選擇</h3><p>類型: {{ selectedModel.label }}{{ mode === 'basin' ? ' 全球洋區' : '台風襲擊潛勢' }}</p><p>起報: {{ currentTime }}</p><template v-if="mode === 'typhoon'"><p>預報: {{ products.find(item => item.id === forecastType)?.label }}</p><p>台風: {{ selectedStorm || '尚無資料' }}</p></template><p v-else>洋區: {{ region.label }}</p><p v-if="result">來源: {{ result.source === 'remote' ? '線上資料' : '離線快照' }}</p></div>
         <button v-if="mode === 'typhoon'" class="basin-csv potential-export" :disabled="forecastType !== 'ensemble' || loading || !visiblePoints.length" @click="downloadCsv">下載氣旋 CSV</button>
         <button class="basin-info" :aria-expanded="showInfo" aria-controls="basin-explanation" @click="showInfo = !showInfo">ⓘ <span>資料說明</span></button>
-        <p v-if="showInfo" id="basin-explanation" class="basin-help">WN3C 使用 Google WNV3，WN2C 使用 FNV3P1；WM-6 僅載入上游正式氣旋的 members_path，固定同一起報時間，未使用錐形或登陸點。最新模式每 5 分鐘檢查；手動時次不自動切換。只顯示 0–312h，不生成缺失位置或增強風速。洋區圓圈依 MSLP 著色；氣旋圖依風級著色。查詢時次不保證上游已發布。WeatherNext 資料遵循原始來源條款，≥1小時資料適用 CC BY 4.0。系集潛勢不等於官方機率，請以官方警報為準。</p>
+        <p v-if="showInfo" id="basin-explanation" class="basin-help">WN3C 使用 Google WNV3，WN2C 使用 FNV3P1。WM-6 預設 include_unofficial_ids=true：匹配氣旋讀取 members_path；未匹配系統依 API 定義使用其單成員 path，成員編號來自供應商 generated ID 的 _M 尾碼，不識別的 ID 則另查 detail。各路徑保留原始 ID、固定同一起報時間，不合併到命名氣旋，未畫錐形或登陸點。跨時次 index 不是當次預報；本圖只使用所選 initialization。最新模式每 5 分鐘檢查；手動時次不自動切換。只顯示 0–312h，以 forecast_zero 為時效基準，不生成缺失位置或增強風速。洋區圓圈依 hPa 著色；氣旋圖依原始 kt 分級。查詢時次不保證上游已發布。WeatherNext 資料遵循原始來源條款，≥1小時資料適用 CC BY 4.0。生成候選不代表官方成颱機率。</p>
       </aside>
     </div>
   </section>
@@ -150,4 +161,5 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
 @media (max-width: 1200px) { .basin-layout { grid-template-columns: 210px minmax(0, 1fr); }.basin-controls { grid-column: 2; }.basin-sidebar { grid-row: 1 / span 2; }.basin-chart-panel { min-height: 350px; }.basin-controls fieldset { margin-top: 18px; }.basin-buttons { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .basin-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }.basin-sidebar, .basin-controls { grid-column: 1; grid-row: auto; }.basin-sidebar { order: 0; }.basin-chart-panel { order: 1; padding: 10px; min-height: 260px; }.basin-controls { order: 2; }.basin-panel { padding: 16px; }.basin-top { flex-wrap: wrap; gap: 10px; }.basin-top span { display: none; }.basin-sidebar > .basin-section:not(.basin-model-list):nth-child(-n+6) { display: none; }.basin-model-list { margin-bottom: 0; }.basin-model-list button { padding: 10px 14px; }.basin-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .potential-storms .basin-buttons { display: flex; flex-wrap: wrap; }.potential-storms button { border-color: #4a91e3; color: #4a91e3; border-radius: 15px; padding: 10px; }.potential-export { margin-top: 18px; }.basin-run select { min-width: 0; text-overflow: ellipsis; }.basin-current p { overflow-wrap: anywhere; }
+.wm6-unofficial-toggle { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.7; margin-top: 18px; }.wm6-unofficial-toggle input { flex: 0 0 auto; margin-top: 4px; }
 </style>
