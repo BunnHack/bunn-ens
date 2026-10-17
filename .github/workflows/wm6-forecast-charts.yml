@@ -1,0 +1,61 @@
+name: Generate WM-6 forecast charts
+on:
+  schedule:
+    - cron: '25 0,6,12,18 * * *'
+  workflow_dispatch:
+    inputs:
+      initialization:
+        description: 'Exact WM-6 initialization (ISO UTC), or latest'
+        default: latest
+        type: string
+      max_hour:
+        description: 'Maximum forecast hour (0–312, multiple of 6)'
+        default: '312'
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: wm6-forecast-publication
+  cancel-in-progress: false
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements-forecast.txt
+      - run: pip install -r scripts/requirements-forecast.txt
+      - name: Test physical conversions and run isolation
+        run: python -m unittest discover -s tests -p 'test_forecast*.py' -v
+      - name: Restore previous published run
+        uses: actions/cache@v4
+        with:
+          path: .generated-site/forecast-models
+          key: wm6-chart-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: wm6-chart-history-
+      - name: Generate charts from native WM-6 NetCDF
+        env:
+          WM_API_KEY: ${{ secrets.WM_API_KEY }}
+          INITIALIZATION: ${{ inputs.initialization || 'latest' }}
+          MAX_HOUR: ${{ inputs.max_hour || '312' }}
+        run: python scripts/wm6_forecast.py --initialization "$INITIALIZATION" --max-hour "$MAX_HOUR"
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload generated charts only
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .generated-site
+      - name: Publish chart assets
+        id: deployment
+        uses: actions/deploy-pages@v4

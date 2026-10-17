@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import WeatherTools from './components/WeatherTools.vue'
 import Wnc2Ensemble from './components/Wnc2Ensemble.vue'
 import Wm6Ensemble from './components/Wm6Ensemble.vue'
+import ForecastModels from './components/ForecastModels.vue'
 
 type Cycle = '00z' | '06z' | '12z' | '18z'
 type Forecast = {
@@ -18,7 +19,7 @@ const navigation = [
   { label: 'Current Storms', href: 'https://www.tropicaltidbits.com/storminfo/' },
   { label: 'Weather Tools', href: '#weather-tools' },
   { label: 'Satellite Imagery', href: 'https://www.tropicaltidbits.com/sat/' },
-  { label: 'Forecast Models', href: 'https://www.tropicaltidbits.com/analysis/models/' },
+  { label: 'Forecast Models', href: '#forecast-models' },
   { label: 'Analysis Tools', href: 'https://www.tropicaltidbits.com/analysis/' },
   { label: 'About', href: 'https://www.tropicaltidbits.com/about.html' },
 ]
@@ -67,6 +68,7 @@ function closeDialogs() {
 }
 const currentHash = ref(window.location.hash)
 const weatherToolsOpen = computed(() => /^#weather-tools(?:\/|$)/.test(currentHash.value))
+const forecastModelsOpen = computed(() => currentHash.value === '#forecast-models')
 const weatherToolId = computed(() => currentHash.value.startsWith('#weather-tools/') ? currentHash.value.slice('#weather-tools/'.length) : undefined)
 async function onHashChange() {
   currentHash.value = window.location.hash
@@ -76,6 +78,9 @@ async function onHashChange() {
     const heading = document.querySelector<HTMLElement>('#weather-tools h1')
     heading?.focus({ preventScroll: true })
     document.querySelector('#weather-tools')?.scrollIntoView?.({ block: 'start' })
+  } else if (forecastModelsOpen.value) {
+    document.querySelector<HTMLElement>('#forecast-models h1')?.focus({ preventScroll: true })
+    document.querySelector('#forecast-models')?.scrollIntoView?.({ block: 'start' })
   } else if (currentHash.value === '#models-title') document.querySelector('#models-title')?.scrollIntoView?.({ block: 'start' })
 }
 onMounted(() => window.addEventListener('hashchange', onHashChange))
@@ -91,15 +96,17 @@ onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener(
       </a>
       <nav class="main-navigation" aria-label="Main navigation">
         <template v-for="(item, index) in navigation" :key="item.label">
-          <a v-if="index === 0" class="nav-link" :class="{ current: !weatherToolsOpen }" href="#main-content" :aria-current="!weatherToolsOpen ? 'page' : undefined">{{ item.label }}</a>
+          <a v-if="index === 0" class="nav-link" :class="{ current: !weatherToolsOpen && !forecastModelsOpen }" href="#main-content" :aria-current="!weatherToolsOpen && !forecastModelsOpen ? 'page' : undefined">{{ item.label }}</a>
           <a v-else-if="index === 1" class="nav-link" :class="{ current: weatherToolsOpen }" :href="item.href" :aria-current="weatherToolsOpen ? 'page' : undefined">{{ item.label }}</a>
+          <a v-else-if="index === 3" class="nav-link" :class="{ current: forecastModelsOpen }" :href="item.href" :aria-current="forecastModelsOpen ? 'page' : undefined">{{ item.label }}</a>
           <a v-else class="nav-link" :href="item.href" target="_blank" rel="noopener noreferrer" :aria-label="`${item.label} — open original website in new tab`">{{ item.label }}</a>
         </template>
       </nav>
     </header>
 
     <WeatherTools v-if="weatherToolsOpen" :tool-id="weatherToolId" />
-    <main v-show="!weatherToolsOpen" id="main-content">
+    <ForecastModels v-if="forecastModelsOpen" />
+    <main v-show="!weatherToolsOpen && !forecastModelsOpen" id="main-content">
       <section class="page-title-row">
         <div>
           <p class="eyebrow">TROPICAL CYCLONE MONITORING</p>

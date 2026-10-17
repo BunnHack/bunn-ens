@@ -12,3 +12,6 @@ dist/
 *.key
 *.log
 .DS_Store
+.generated-site/
+__pycache__/
+*.pyc
