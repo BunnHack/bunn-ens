@@ -1,7 +1,7 @@
 const WEATHERNEXT_UPSTREAM = 'https://deepmind.google.com/science/weatherlab/download/cyclones';
 const WINDBORNE_UPSTREAM = 'https://api.windbornesystems.com/forecasts/v1/wm-6/tropical_cyclones';
 const WINDBORNE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-const MODELS = new Set(['FNV3P1', 'FNV3P2']);
+const MODELS = new Set(['FNV3P1', 'FNV3P2', 'WNV3']);
 const CYCLES = new Set(['00z', '06z', '12z', '18z']);
 const BASINS = new Set(['AL', 'EP', 'CP', 'WP', 'NI', 'SI', 'AU', 'SP']);
 const MAX_BYTES = 10_000_000;

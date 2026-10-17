@@ -5,17 +5,18 @@ import BasinEnsemble from './BasinEnsemble.vue'
 
 const props = defineProps<{ toolId?: string }>()
 const selected = computed(() => weatherTools.find(tool => tool.id === props.toolId))
+const workspace = computed(() => props.toolId === 'basin' || props.toolId === 'typhoon')
 </script>
 
 <template>
   <div class="tools-surface" lang="zh-Hant">
-    <main id="weather-tools" class="tools-page" :class="{ 'tools-page-basin': toolId === 'basin' }">
-      <header v-if="toolId !== 'basin'" class="tools-heading">
+    <main id="weather-tools" class="tools-page" :class="{ 'tools-page-basin': workspace }">
+      <header v-if="!workspace" class="tools-heading">
         <div><p class="tools-eyebrow">FORECASTS · OBSERVATIONS · COMMUNITY</p><h1 tabindex="-1">Weather Tools</h1><p>氣象工具與預報資源</p></div>
         <a class="tools-home" href="#main-content">返回風暴監測 <span aria-hidden="true">↗</span></a>
       </header>
-      <p v-if="toolId !== 'basin'" class="tools-notice">依參考畫面整理的工具入口。縮圖與日期均來自參考截圖，並非即時預報或更新時間；產品接入情況請見詳細頁面。</p>
-      <BasinEnsemble v-if="toolId === 'basin'" />
+      <p v-if="!workspace" class="tools-notice">依參考畫面整理的工具入口。縮圖與日期均來自參考截圖，並非即時預報或更新時間；產品接入情況請見詳細頁面。</p>
+      <BasinEnsemble v-if="workspace" :mode="toolId === 'typhoon' ? 'typhoon' : 'basin'" />
 
       <article v-else-if="selected" class="tool-detail" :aria-labelledby="`tool-${selected.id}`">
         <a class="tools-back" href="#weather-tools">← 所有氣象工具</a>

@@ -41,7 +41,9 @@ try {
       if (tool.id === 'basin') {
         assert.ok(document.querySelector('.basin-layout'))
         assert.equal(document.querySelector('.basin-top h1').textContent, '洋區系集預報')
-        assert.match(document.querySelector('.basin-reference figcaption').textContent, /非即時/)
+        assert.equal(document.querySelector('.basin-reference'), null)
+        assert.match(document.querySelector('.basin-model-list .active').textContent, /WN3C/)
+        assert.ok([...document.querySelectorAll('.basin-sidebar summary')].some(el => el.textContent.includes('台風潛勢預報')))
         assert.equal(document.querySelector('.basin-top a').getAttribute('href'), '#weather-tools')
         continue
       }

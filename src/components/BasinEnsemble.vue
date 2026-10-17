@@ -1,57 +1,62 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { loadEnsemble, REFRESH_MS, sourceUrl, type Cycle, type DataResult } from '../data/wnc2'
+import { REFRESH_MS } from '../data/wnc2'
 import { basinCsv, basinRegions, pointInRegion, type MapTheme } from '../data/basin'
+import { cycloneCatalog, cycloneChoices, cycloneMean, cycloneRegion, loadPotential, potentialModels, type PotentialModel, type PotentialResult } from '../data/potential'
 import BasinPlot from './BasinPlot.vue'
 
-const models = [
-  { id: 'wn3', label: 'WN3C 全球洋區', status: '參考圖' },
-  { id: 'wn2', label: 'WN2C 全球洋區', status: '可用' },
-  { id: 'ecmwf', label: 'ECMWF 全球洋區', status: '未接入' },
-  { id: 'aifs', label: 'AIFS 全球洋區', status: '未接入' },
-  { id: 'gefs', label: 'GEFS 全球洋區', status: '未接入' },
-  { id: 'aigefs', label: 'AIGEFS 全球洋區', status: '未接入' },
-  { id: 'genc', label: 'GENC 全球洋區', status: '未接入' },
-]
+const props = withDefaults(defineProps<{ mode?: 'basin' | 'typhoon' }>(), { mode: 'basin' })
 const sections = ['主要模式預報', '主要模式誤差', '防御參考', '海洋預報', '1000-Member 產品']
-const model = ref('wn3')
+const model = ref(props.mode === 'typhoon' ? 'wn2' : 'wn3')
 const theme = ref<MapTheme>('light')
 const regionId = ref('china')
-const runChoice = ref('reference')
-const result = ref<DataResult | null>(null)
+const runChoice = ref('latest')
+const selectedStorm = ref('')
+const forecastType = ref('ensemble')
+const products = [{ id: 'ensemble', label: '系集預報' }, { id: 'probability', label: '機率預報' }, { id: 'sst', label: '系集海溫' }, { id: 'heat', label: '系集熱焓' }]
+const result = ref<PotentialResult | null>(null)
 const loading = ref(false)
 const error = ref('')
 const showInfo = ref(false)
+const supported = computed(() => ['wn3', 'wn2', 'wm6'].includes(model.value))
+const title = computed(() => props.mode === 'basin' ? '洋區系集預報' : '台風潛勢預報')
 const region = computed(() => basinRegions.find(item => item.id === regionId.value)!)
-const selectedModel = computed(() => models.find(item => item.id === model.value)!)
-const visiblePoints = computed(() => result.value?.catalog.points.filter(point => pointInRegion(point, region.value)) ?? [])
-const runLabel = (date: string, cycle: string) => `${date.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1年$2月$3日')}${cycle.slice(0, 2)}時 (UTC)`
-const currentTime = computed(() => model.value === 'wn3' ? '2026年10月16日06時 (UTC) · 參考圖' : result.value ? runLabel(result.value.run.date, result.value.run.cycle) : '尚無資料')
+const selectedModel = computed(() => potentialModels.find(item => item.id === model.value)!)
+const options = computed(() => result.value ? cycloneChoices(result.value) : [])
+const plotted = computed(() => result.value ? props.mode === 'typhoon' ? cycloneCatalog(result.value, selectedStorm.value) : result.value.catalog : null)
+const mapRegion = computed(() => props.mode === 'typhoon' && plotted.value ? cycloneRegion(plotted.value) : region.value)
+const visiblePoints = computed(() => plotted.value?.points.filter(point => props.mode === 'typhoon' || pointInRegion(point, region.value)) ?? [])
+const mean = computed(() => result.value && props.mode === 'typhoon' ? cycloneMean(result.value, selectedStorm.value) : [])
+const runLabel = (date: string, cycle: string) => date.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1年$2月$3日') + cycle.slice(0, 2) + '時 (UTC)'
+const currentTime = computed(() => result.value ? runLabel(result.value.catalog.initTime.slice(0, 10), result.value.catalog.initTime.slice(11, 13)) : '尚無資料')
 const availableRuns = computed(() => {
   const times = new Map<string, string>()
-  if (result.value) times.set(`${result.value.run.date}|${result.value.run.cycle}`, runLabel(result.value.run.date, result.value.run.cycle))
+  if (result.value) {
+    const date = result.value.catalog.initTime.slice(0, 10), cycle = result.value.catalog.initTime.slice(11, 13) + 'z'
+    times.set(date + '|' + cycle, runLabel(date, cycle) + ' · 已載入')
+  }
   const now = Math.floor(Date.now() / 21_600_000) * 21_600_000
   for (let i = 0; i < 12; i++) {
-    const date = new Date(now - i * 21_600_000).toISOString(), cycle = `${date.slice(11, 13)}z`
-    times.set(`${date.slice(0, 10)}|${cycle}`, runLabel(date.slice(0, 10), cycle))
+    const date = new Date(now - i * 21_600_000).toISOString(), cycle = date.slice(11, 13) + 'z'
+    times.set(date.slice(0, 10) + '|' + cycle, runLabel(date.slice(0, 10), cycle) + ' · 查詢時次')
   }
-  times.set('2026-10-13|00z', '2026年10月13日00時 (UTC) · 已存快照時次')
+  times.set('2026-10-16|18z', '2026年10月16日18時 (UTC) · 指定時次')
   return [...times].map(([value, label]) => ({ value, label }))
 })
 let controller: AbortController | undefined
 let timer: ReturnType<typeof setInterval> | undefined
-function chooseModel(id: string) {
-  model.value = id
-  runChoice.value = id === 'wn3' ? 'reference' : 'latest'
-}
+function chooseModel(id: string) { model.value = id; runChoice.value = 'latest'; forecastType.value = 'ensemble' }
+function navigateMode(event: Event, mode: 'basin' | 'typhoon') { if (props.mode !== mode) { event.preventDefault(); window.location.hash = '#weather-tools/' + mode } }
 async function refresh() {
   controller?.abort(); result.value = null; error.value = ''; loading.value = false
-  if (model.value !== 'wn2') return
+  if (!supported.value) return
   const active = new AbortController(); controller = active; loading.value = true
   try {
-    const [date, cycle] = runChoice.value.split('|')
-    const data = await loadEnsemble({ model: 'FNV3P1', cycle: runChoice.value === 'latest' ? 'latest' : cycle as Cycle, date: runChoice.value === 'latest' ? undefined : date }, active.signal)
-    if (!active.signal.aborted) result.value = data
+    const data = await loadPotential(model.value as PotentialModel, runChoice.value, active.signal)
+    if (active.signal.aborted) return
+    result.value = data
+    const choices = cycloneChoices(data)
+    if (!choices.some(item => item.key === selectedStorm.value)) selectedStorm.value = choices.find(item => item.key === 'WP292026')?.key ?? choices.find(item => !item.key.startsWith('genesis:'))?.key ?? choices[0]?.key ?? ''
   } catch (cause) { if (!active.signal.aborted) error.value = cause instanceof Error ? cause.message : '無法載入所選時次' }
   finally { if (!active.signal.aborted) loading.value = false }
 }
@@ -59,54 +64,65 @@ function downloadCsv() {
   if (!result.value || !visiblePoints.value.length) return
   const url = URL.createObjectURL(new Blob([basinCsv(visiblePoints.value)], { type: 'text/csv;charset=utf-8' }))
   const anchor = document.createElement('a'); anchor.href = url
-  anchor.download = `WNC2-${regionId.value}-${result.value.run.date}-${result.value.run.cycle}-0-312h.csv`
+  const init = result.value.catalog.initTime
+  anchor.download = (model.value === 'wn2' ? 'WNC2' : model.value === 'wn3' ? 'WNC3' : 'WM-6') + '-' + (props.mode === 'typhoon' ? selectedStorm.value.replace(/:/g, '-') : regionId.value) + '-' + init.slice(0, 10) + '-' + init.slice(11, 13) + 'z-0-312h.csv'
   anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+function onVisibility() { if (document.visibilityState === 'visible' && runChoice.value === 'latest' && !loading.value) refresh() }
 watch([model, runChoice], refresh)
-onMounted(() => { timer = setInterval(() => { if (model.value === 'wn2' && runChoice.value === 'latest' && document.visibilityState !== 'hidden' && !loading.value) refresh() }, REFRESH_MS) })
-onBeforeUnmount(() => { controller?.abort(); clearInterval(timer) })
+watch(() => props.mode, () => { forecastType.value = 'ensemble' })
+onMounted(() => {
+  refresh()
+  timer = setInterval(() => { if (runChoice.value === 'latest' && document.visibilityState !== 'hidden' && !loading.value) refresh() }, REFRESH_MS)
+  document.addEventListener('visibilitychange', onVisibility)
+})
+onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
 
 <template>
-  <section class="basin-viewer" :data-theme="theme" aria-label="洋區系集預報">
-    <div class="basin-top"><a href="#weather-tools">← Weather Tools</a><h1 tabindex="-1">洋區系集預報</h1><span>氣旋路徑 · 洋區潛勢</span></div>
+  <section class="basin-viewer" :data-theme="theme" :aria-label="title">
+    <div class="basin-top"><a href="#weather-tools">← Weather Tools</a><h1 tabindex="-1">{{ title }}</h1><span>實際系集路徑 · 0–312h</span></div>
     <div class="basin-layout">
       <aside class="basin-sidebar basin-panel" aria-label="台風預報模式選單">
         <h2>台風預報</h2>
-        <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ section }}</summary><p>此分類產品尚未接入。請使用下方的洋區潛勢預報。</p></details>
-        <details open class="basin-section basin-model-list"><summary>洋區潛勢預報</summary><button v-for="item in models" :key="item.id" :class="{ active: model === item.id }" :aria-pressed="model === item.id" @click="chooseModel(item.id)">{{ item.label }}<small>{{ item.status }}</small></button></details>
-        <details class="basin-section"><summary>台風潛勢預報</summary><p>系集路徑並非官方發展機率，請以官方警報為準。</p><a href="#models-title">本站 WNC2 / WM-6 系集 →</a></details>
+        <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ section }}</summary><p>此分類產品尚未接入。</p></details>
+        <details v-for="group in (['basin', 'typhoon'] as const)" :key="group" :open="mode === group" class="basin-section" :class="{ 'basin-model-list': mode === group }">
+          <summary @click="navigateMode($event, group)">{{ group === 'basin' ? '洋區潛勢預報' : '台風潛勢預報' }}</summary>
+          <template v-if="mode === group"><button v-for="item in potentialModels" :key="item.id" :class="{ active: model === item.id }" :aria-pressed="model === item.id" @click="chooseModel(item.id)">{{ item.label }} {{ group === 'basin' ? '全球洋區' : '台風襲擊潛勢' }}<small>{{ item.status }}</small></button></template>
+          <a v-else :href="'#weather-tools/' + group">進入{{ group === 'basin' ? '洋區' : '台風' }}潛勢預報 →</a>
+        </details>
       </aside>
 
       <div class="basin-chart-panel basin-panel">
-        <template v-if="model === 'wn3'">
-          <figure v-if="regionId === 'china'" class="basin-reference"><img src="/images/weather-tools/wn3-basin-reference.webp" alt="WN3C 2026年10月16日06Z中國近海系集預報參考截圖，非即時資料" width="871" height="703" /><figcaption>WN3C 參考截圖 · 2026-10-16 06Z · 非即時資料，圖片內容不隨主題重新著色。</figcaption></figure>
-          <div v-else class="basin-empty"><h2>此洋區尚無 WN3C 參考圖</h2><p>不會把中國近海的圖片當作 {{ region.label }} 預報。</p><button @click="chooseModel('wn2')">使用 WNC2 洋區資料</button></div>
-          <p class="basin-data-note">WN3C 尚未接入資料源；參考圖內的 0–360h、氣壓與成員數僅屬原圖，不是本站即時結果。切換 WN2C 可查看實際資料與下載 CSV。</p>
+        <p v-if="loading" class="basin-status" role="status">正在載入 {{ selectedModel.label }} 所選時次與成員路徑…</p>
+        <div v-else-if="error" class="basin-error" role="alert"><h2>無法載入此時次</h2><p>{{ error }}</p><button @click="refresh">重試</button></div>
+        <div v-else-if="!supported" class="basin-empty"><h2>{{ selectedModel.label }} 尚未接入</h2><p>不會以其他模式或舊圖片代替。</p><button @click="chooseModel('wn3')">查看 WNC3 預報</button></div>
+        <div v-else-if="mode === 'typhoon' && forecastType !== 'ensemble'" class="basin-empty"><h2>{{ products.find(item => item.id === forecastType)?.label }} 尚未接入</h2><p>{{ forecastType === 'probability' ? '目前沒有定義門檻、時窗與分母的襲擊機率資料，系集線條不能當作官方機率。' : '目前資料源不含海溫或海洋熱焓場，不以風速或氣壓替代。' }}</p><button @click="forecastType = 'ensemble'">返回系集預報</button></div>
+        <template v-else-if="result && plotted">
+          <BasinPlot :catalog="plotted" :region="mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="mean" :mean-label="model === 'wm6' ? 'Provider mean' : 'Local mean ≥25% members'" />
+          <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ result.source === 'snapshot' ? '離線快照 · 未確認為最新資料' : model === 'wm6' ? '已連接 WM-6 真實成員路徑' : '已連接 WeatherNext CSV' }} · {{ currentTime }} · {{ visiblePoints.length }} 個預報點 · 0–312h</p>
+          <p v-if="result.warning" class="basin-data-note" role="status">{{ result.warning }}</p>
+          <p v-if="mode === 'typhoon'" class="basin-data-note">顏色使用原始風速與本站風級，未放大強度。{{ model === 'wm6' ? '黑線為供應商平均路徑。' : '黑線為本站計算的平均路徑，僅保留至少 25% 成員存在的時效；數字 genesis ID 僅屬單一成員，不跨成員合併。' }}</p>
+          <a v-if="result.url" class="basin-source" :href="result.url" target="_blank" rel="noopener noreferrer">原始{{ model === 'wm6' ? 'JSON' : 'CSV' }} 資料來源 ↗</a>
         </template>
-        <template v-else-if="model === 'wn2'">
-          <p v-if="loading" class="basin-status" role="status">正在載入 WNC2 所選時次…</p>
-          <div v-else-if="error" class="basin-error" role="alert"><h2>無法載入此時次</h2><p>{{ error }}</p><button @click="refresh">重試</button></div>
-          <template v-else-if="result">
-            <BasinPlot :catalog="result.catalog" :region="region" :theme="theme" />
-            <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ result.source === 'remote' ? '已連接 WeatherNext CSV' : '離線快照 · 未確認為最新資料' }} · {{ currentTime }} · {{ visiblePoints.length }} 個洋區預報點 · 0–312h</p>
-            <p v-if="result.warning" class="basin-data-note">{{ result.warning }}</p>
-            <a class="basin-source" :href="sourceUrl(result.run)" target="_blank" rel="noopener noreferrer">原始 CSV 資料來源 ↗</a>
-          </template>
-        </template>
-        <div v-else class="basin-empty"><h2>{{ selectedModel.label }} 尚未接入</h2><p>目前沒有此模式的洋區資料，不會以其他模式或舊圖片代替。</p><button @click="chooseModel('wn2')">查看 WNC2 洋區預報</button></div>
       </div>
 
-      <aside class="basin-controls basin-panel" aria-label="洋區預報控制台">
+      <aside class="basin-controls basin-panel" aria-label="預報控制台">
         <h2>控制台</h2>
-        <button class="basin-csv" :disabled="model !== 'wn2' || loading || !visiblePoints.length" @click="downloadCsv">下載目前洋區CSV文件</button>
-        <p v-if="model !== 'wn2'" class="basin-help">CSV 僅適用於已載入的 WN2C 資料。</p>
-        <label class="basin-run">起報時間<select v-model="runChoice" :disabled="model !== 'wn2'" aria-label="洋區起報時間"><template v-if="model === 'wn3'"><option value="reference">2026年10月16日06時 · 參考圖</option></template><template v-else><option value="latest">最新已發布時次 (UTC)</option><option v-for="run in availableRuns" :key="run.value" :value="run.value">{{ run.label }}</option></template></select></label>
-        <fieldset><legend>主題選擇</legend><div class="basin-buttons"><button v-for="item in ([['light', '淺色'], ['color', '彩色'], ['dark', '深色']] as const)" :key="item[0]" :class="{ selected: theme === item[0] }" :aria-pressed="theme === item[0]" @click="theme = item[0]">{{ item[1] }}</button></div></fieldset>
-        <fieldset><legend>洋區選擇</legend><div class="basin-buttons"><button v-for="item in basinRegions" :key="item.id" :class="{ selected: regionId === item.id }" :aria-pressed="regionId === item.id" @click="regionId = item.id">{{ item.label }}</button></div></fieldset>
-        <div class="basin-current"><h3>當前選擇</h3><p>類型: {{ selectedModel.label }}</p><p>起報: {{ currentTime }}</p><p>洋區: {{ region.label }}</p><p v-if="result">來源: {{ result.source === 'remote' ? '線上 CSV' : '離線快照' }}</p></div>
+        <button v-if="mode === 'basin'" class="basin-csv" :disabled="!supported || loading || !visiblePoints.length" @click="downloadCsv">下載目前洋區CSV文件</button>
+        <label class="basin-run">起報時間<select v-model="runChoice" :disabled="!supported" aria-label="洋區起報時間"><option value="latest">最新已發布時次 (UTC)</option><option v-for="run in availableRuns" :key="run.value" :value="run.value">{{ run.label }}</option></select></label>
+        <template v-if="mode === 'typhoon'">
+          <fieldset class="potential-products"><legend>預報類型</legend><div class="basin-buttons"><button v-for="product in products" :key="product.id" :class="{ selected: forecastType === product.id }" :aria-pressed="forecastType === product.id" @click="forecastType = product.id">{{ product.label }}</button></div></fieldset>
+          <fieldset class="potential-storms"><legend>台風編號 / 單成員生成路徑</legend><div class="basin-buttons"><button v-for="option in options.filter(item => !item.key.startsWith('genesis:'))" :key="option.key" :class="{ selected: selectedStorm === option.key }" :aria-pressed="selectedStorm === option.key" @click="selectedStorm = option.key">{{ option.key }}</button></div><label v-if="options.some(item => item.key.startsWith('genesis:'))" class="basin-run">其他路徑<select v-model="selectedStorm" aria-label="氣旋與單成員生成路徑"><option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}</option></select></label><p v-if="!options.length" class="basin-help">目前沒有可選氣旋。</p></fieldset>
+        </template>
+        <template v-else>
+          <fieldset><legend>主題選擇</legend><div class="basin-buttons"><button v-for="item in ([['light', '淺色'], ['color', '彩色'], ['dark', '深色']] as const)" :key="item[0]" :class="{ selected: theme === item[0] }" :aria-pressed="theme === item[0]" @click="theme = item[0]">{{ item[1] }}</button></div></fieldset>
+          <fieldset><legend>洋區選擇</legend><div class="basin-buttons"><button v-for="item in basinRegions" :key="item.id" :class="{ selected: regionId === item.id }" :aria-pressed="regionId === item.id" @click="regionId = item.id">{{ item.label }}</button></div></fieldset>
+        </template>
+        <div class="basin-current"><h3>當前選擇</h3><p>類型: {{ selectedModel.label }}{{ mode === 'basin' ? ' 全球洋區' : '台風襲擊潛勢' }}</p><p>起報: {{ currentTime }}</p><template v-if="mode === 'typhoon'"><p>預報: {{ products.find(item => item.id === forecastType)?.label }}</p><p>台風: {{ selectedStorm || '尚無資料' }}</p></template><p v-else>洋區: {{ region.label }}</p><p v-if="result">來源: {{ result.source === 'remote' ? '線上資料' : '離線快照' }}</p></div>
+        <button v-if="mode === 'typhoon'" class="basin-csv potential-export" :disabled="forecastType !== 'ensemble' || loading || !visiblePoints.length" @click="downloadCsv">下載氣旋 CSV</button>
         <button class="basin-info" :aria-expanded="showInfo" aria-controls="basin-explanation" @click="showInfo = !showInfo">ⓘ <span>資料說明</span></button>
-        <p v-if="showInfo" id="basin-explanation" class="basin-help">WNC2 每 5 分鐘檢查最新時次。預報限制為 0–312h；圓點依 MSLP 著色，並非風速強度分類。各氣旋、各成員路徑獨立，未合併數字 genesis ID。CSV 為目前洋區內的預報點。預報僅供參考，請留意官方警報。</p>
+        <p v-if="showInfo" id="basin-explanation" class="basin-help">WN3C 使用 Google WNV3，WN2C 使用 FNV3P1；WM-6 僅載入上游正式氣旋的 members_path，固定同一起報時間，未使用錐形或登陸點。最新模式每 5 分鐘檢查；手動時次不自動切換。只顯示 0–312h，不生成缺失位置或增強風速。洋區圓圈依 MSLP 著色；氣旋圖依風級著色。查詢時次不保證上游已發布。WeatherNext 資料遵循原始來源條款，≥1小時資料適用 CC BY 4.0。系集潛勢不等於官方機率，請以官方警報為準。</p>
       </aside>
     </div>
   </section>
@@ -132,5 +148,6 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer) })
 .basin-current { border-radius: 9px; background: var(--basin-bg); padding: 16px; margin-top: 25px; }.basin-current h3 { margin: 0 0 14px; font-size: 15px; }.basin-current p { font-size: 12px; line-height: 1.6; color: #8d959e; margin: 6px 0; }.basin-info { display: flex; align-items: center; gap: 8px; margin: 16px 0 0 auto; color: #438ed9; background: transparent; font-size: 25px; }.basin-info span { font-size: 11px; }.basin-help { font-size: 11px; color: #8a95a1; line-height: 1.8; }
 @media (min-width: 1750px) { .basin-layout { grid-template-columns: 280px minmax(0, 1fr) 320px; }.basin-chart-panel { padding: 20px 45px; } }
 @media (max-width: 1200px) { .basin-layout { grid-template-columns: 210px minmax(0, 1fr); }.basin-controls { grid-column: 2; }.basin-sidebar { grid-row: 1 / span 2; }.basin-chart-panel { min-height: 350px; }.basin-controls fieldset { margin-top: 18px; }.basin-buttons { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 700px) { .basin-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }.basin-sidebar, .basin-controls { grid-column: 1; grid-row: auto; }.basin-sidebar { order: 0; }.basin-chart-panel { order: 1; padding: 10px; min-height: 260px; }.basin-controls { order: 2; }.basin-panel { padding: 16px; }.basin-top { flex-wrap: wrap; gap: 10px; }.basin-top span { display: none; }.basin-sidebar > .basin-section:not(.basin-model-list) { display: none; }.basin-model-list { margin-bottom: 0; }.basin-model-list button { padding: 10px 14px; }.basin-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .basin-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }.basin-sidebar, .basin-controls { grid-column: 1; grid-row: auto; }.basin-sidebar { order: 0; }.basin-chart-panel { order: 1; padding: 10px; min-height: 260px; }.basin-controls { order: 2; }.basin-panel { padding: 16px; }.basin-top { flex-wrap: wrap; gap: 10px; }.basin-top span { display: none; }.basin-sidebar > .basin-section:not(.basin-model-list):nth-child(-n+6) { display: none; }.basin-model-list { margin-bottom: 0; }.basin-model-list button { padding: 10px 14px; }.basin-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.potential-storms .basin-buttons { display: flex; flex-wrap: wrap; }.potential-storms button { border-color: #4a91e3; color: #4a91e3; border-radius: 15px; padding: 10px; }.potential-export { margin-top: 18px; }.basin-run select { min-width: 0; text-overflow: ellipsis; }.basin-current p { overflow-wrap: anywhere; }
 </style>

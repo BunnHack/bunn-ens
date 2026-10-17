@@ -45,5 +45,5 @@ export function basinTracks(catalog: Catalog, region: BasinRegion) {
 }
 export function basinCsv(points: TrackPoint[]) {
   const quoted = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
-  return ['init_time,track_id,sample,valid_time,lead_time_hours,lat,lon,maximum_sustained_wind_speed_knots,minimum_sea_level_pressure_hpa', ...points.map(point => [point.initTime, point.trackId, point.sample, point.validTime, point.leadHours, point.lat, point.lon, point.wind, point.pressure].map(quoted).join(','))].join('\n')
+  return ['init_time,track_id,sample,valid_time,lead_time_hours,lat,lon,maximum_sustained_wind_speed_knots,minimum_sea_level_pressure_hpa', ...points.map(point => [point.initTime, point.trackId, point.sample, point.validTime, point.leadHours, point.lat, point.lon, Number.isFinite(point.wind) ? point.wind : null, point.pressure].map(quoted).join(','))].join('\n')
 }

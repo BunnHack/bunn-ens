@@ -1,6 +1,6 @@
 # Tropical Tidbits — Material Design recreation
 
-Vue 3 + TypeScript recreation with live WNC2 and WM-6 ensemble guidance.
+Vue 3 + TypeScript recreation with live WNC2, WNC3 (WNV3) and WM-6 ensemble guidance.
 
 WM-6 uses WindBorne's Tropical Cyclone Tracker API. The short response lists cyclones for the latest published initialization; the app then requests the selected cyclone's provider `mean_path`, complete `members_path` tracks and member landfalls. `format=geojson` remains available as map-ready summary data, but cone features are excluded from the browser response and export. The app draws a generalized Natural Earth coastline and colors member segments by `max_wind_kt`. The API key remains server-side in Cloudflare Pages and never enters browser JavaScript.
 
@@ -14,9 +14,15 @@ Each card has a deep-linkable detail view (`/#weather-tools/{id}`), reference-da
 
 ### Basin ensemble screen
 
-`/#weather-tools/basin` opens a full-width three-column viewer: collapsible forecast/model navigation, central map and a control panel with initialization, light/color/dark themes, eleven regional views and CSV export. The initial WN3C view is the supplied 2026-10-16 06Z China-nearshore screenshot and explicitly **not live**; it is never reused for a different basin and CSV export is disabled for reference/unavailable models.
+`/#weather-tools/basin` opens a full-width three-column viewer: collapsible forecast/model navigation, central map and a control panel with initialization, light/color/dark themes, eleven regional views and CSV export. **WN3C** now uses live Google **WNV3** CSV, **WN2C** uses FNV3P1 and **WM-6** loads real `members_path` for the upstream's officially identified cyclones. The former WN3 reference screenshot is no longer used in this view. WM-6 detail requests are pinned to the list initialization, with at most three concurrent requests and explicit partial-failure disclosure. No cones, polygons or landfall markers are rendered.
 
-Select **WN2C 全球洋區** to load the existing live WNC2 CSV API (FNV3P1). The new SVG chart plots individual `(sample, track_id)` paths, hollow MSLP-colored forecast points and global Natural Earth coastlines, with correct longitude wrapping and a strict 0–312h horizon. Genesis IDs remain sample-scoped. All themes and regional controls work on this chart. CSV export contains only the selected initialization's in-region 0–312h points. Latest refreshes every five minutes in visible tabs; manual run failure clears the previous map, and offline snapshots remain clearly labeled. ECMWF/AIFS/GEFS/AIGEFS/GENC entries display unavailable status rather than fabricated products. `tests/basin.test.mjs` covers controls, pressure classes, grouping, regional CSV export, run failure and empty maps.
+SVG charts plot independent `(sample, track_id)` paths, hollow MSLP-colored forecast points and global Natural Earth coastlines with longitude wrapping and strict 0–312h filtering. Genesis IDs remain sample-scoped. Regional CSV export contains only the current initialization's in-region points, with unknown wind left empty instead of invented. Latest refreshes every five minutes in visible tabs; manual failure clears the previous map, and WNC2 fallback snapshots remain clearly labeled. WNV3 never falls back to a different model. ECMWF/AIFS/GEFS/AIGEFS/GENC remain explicitly unavailable.
+
+### Typhoon potential screen
+
+Click **台風潛勢預報** in the sidebar or open `/#weather-tools/typhoon`. This screenshot-inspired three-column workspace provides model selection, initialization, four product controls, actual cyclone-ID buttons, sample-specific genesis selection and a current-selection summary. WNC2/WNC3/WM-6 ensemble maps use raw-wind category colors, per-member peak labels, coastlines and a dark mean with lead-hour labels. WNC means use circular longitude and only lead times retaining ≥25% of members; WM-6 uses the provider mean. Member IDs are shown as supplied (WeatherNext starts at 0). Numeric genesis IDs are never merged between samples. The cyclone CSV contains only the selected track and 0–312h.
+
+Probability, sea-surface temperature and ocean heat-content products have no integrated source: selecting them shows an explicit unavailable explanation instead of recycling the ensemble map or fabricating probabilities. `tests/potential.test.mjs` covers both WNV3 proxies, exact initialization, no cross-model fallback, bounded/pinned WM-6 requests, partial errors, dateline-safe means, both views and product disclosures. Live checks verified WNV3 2026-10-16 18Z (64 members, 2,499 China-region points) and WM-6 2026-10-17 00Z (128 members, 8,614 China-region points); all four live SVGs rasterized with CairoSVG.
 
 ## Local run and checks
 
@@ -36,7 +42,7 @@ The Pages project uses **Advanced Mode** with a GitHub source connection to `Bun
 
 - `public/_worker.js` is copied into `dist/_worker.js` and routes `/api/wnc2` and `/api/wm6` while serving static assets through `env.ASSETS.fetch()`.
 - `GET /api/wnc2?model=FNV3P1&cycle=latest` discovers the latest published six-hour run in the previous 72 hours, probes 00/06/12/18Z in descending order, fetches the fixed Google DeepMind WeatherNext source, validates the CSV, and returns JSON metadata plus CSV.
-- `cycle=00z|06z|12z|18z` performs an exact-cycle discovery; add `date=YYYY-MM-DD` for an exact historical run. `model=FNV3P1|FNV3P2` is allowlisted.
+- `cycle=00z|06z|12z|18z` performs an exact-cycle discovery; add `date=YYYY-MM-DD` for an exact historical run. `model=FNV3P1|FNV3P2|WNV3` is allowlisted. For the supplied WNC3 run use `/api/wnc2?model=WNV3&cycle=18z&date=2026-10-16`.
 - Cloudflare `fetch` cache is used for upstream WeatherNext CSV responses for 5 minutes. The frontend checks latest every 5 minutes while visible and refreshes on tab visibility.
 - `public/data/FNV3P1_2026_10_13T00_00_cyclogenesis.csv` is a downloaded 00Z fallback. The UI labels fallback data as not confirmed latest. Other runs fail instead of silently reusing old data.
 - `GET /api/wm6?initialization_time=latest&include_details=true&format=json` proxies WindBorne's WM-6 tropical cyclone list through the Pages Worker. It supports basin filtering and optional unmatched member tracks. Cone fields and polygon features are removed before caching and returning the response. After selecting a cyclone, the app pins the returned `initialization_time` and requests `/api/wm6/{id}?include_members=true`; the detail response supplies the provider's `mean_path`, every `members_path` and member landfalls.

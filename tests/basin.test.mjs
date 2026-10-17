@@ -56,21 +56,24 @@ await test('Basin plot renders independent pressure-colored tracks, global coast
   } finally { empty.unmount() }
 })
 
-await test('Reference screen matches three-column controls without presenting the WN3 screenshot as live', async () => {
-  const app = createApp(Panel); app.mount('#app')
+await test('Live WNC3 screen has three-column controls and no reference screenshot substitution', async t => {
+  const calls = []
+  t.mock.method(globalThis, 'fetch', async url => { calls.push(String(url)); return Response.json({ csv, run: { model: 'WNV3', date: '2026-10-16', cycle: '06z' }, checkedAt: 'now' }) })
+  const app = createApp(Panel); app.mount('#app'); await settle()
   try {
     assert.ok(document.querySelector('.basin-sidebar'))
     assert.ok(document.querySelector('.basin-chart-panel'))
     assert.ok(document.querySelector('.basin-controls'))
-    assert.equal(document.querySelectorAll('.basin-model-list button').length, 7)
+    assert.equal(document.querySelectorAll('.basin-model-list button').length, 8)
     assert.match(document.querySelector('.basin-model-list .active').textContent, /WN3C/)
-    assert.match(document.querySelector('.basin-reference figcaption').textContent, /非即時/)
-    assert.equal(document.querySelector('.basin-csv').disabled, true)
+    assert.ok(calls.some(url => url.includes('model=WNV3')))
+    assert.equal(document.querySelector('.basin-reference'), null)
+    assert.match(document.querySelector('svg').textContent, /WN3C/)
+    assert.equal(document.querySelector('.basin-csv').disabled, false)
     await clickText('.basin-buttons button', '深色')
     assert.equal(document.querySelector('.basin-viewer').dataset.theme, 'dark')
     await clickText('.basin-buttons button', '北大西洋')
-    assert.equal(document.querySelector('.basin-reference'), null)
-    assert.match(document.querySelector('.basin-empty').textContent, /尚無 WN3C/)
+    assert.equal(document.querySelectorAll('.basin-pressure-points circle').length, 2)
     await clickText('.basin-model-list button', 'ECMWF')
     assert.match(document.querySelector('.basin-empty').textContent, /尚未接入/)
     assert.equal(document.querySelector('svg'), null)
@@ -87,7 +90,7 @@ await test('WNC2 run selection, themes, basin filtering and CSV export use actua
   const app = createApp(Panel); app.mount('#app')
   try {
     await clickText('.basin-model-list button', 'WN2C')
-    assert.match(calls[0], /model=FNV3P1&cycle=latest/)
+    assert.ok(calls.some(url => /model=FNV3P1&cycle=latest/.test(url)))
     assert.match(document.querySelector('.basin-status').textContent, /已連接/)
     assert.equal(document.querySelectorAll('.basin-pressure-points circle').length, 4)
     await clickText('.basin-buttons button', '北大西洋')
@@ -101,8 +104,8 @@ await test('WNC2 run selection, themes, basin filtering and CSV export use actua
     assert.ok(!saved.includes('336'))
     assert.equal(parseCatalog(saved).points.length, 2)
     fail = true
-    const select = document.querySelector('.basin-run select'); select.value = '2026-10-13|00z'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await settle()
-    assert.ok(calls.some(url => url.includes('cycle=00z&date=2026-10-13')))
+    const select = document.querySelector('.basin-run select'); select.value = '2026-10-16|18z'; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await settle()
+    assert.ok(calls.some(url => url.includes('cycle=18z&date=2026-10-16')))
     assert.equal(document.querySelector('svg'), null, 'previous run must not survive manual failure')
     assert.ok(document.querySelector('[role="alert"]'))
     assert.equal(document.querySelector('.basin-csv').disabled, true)
