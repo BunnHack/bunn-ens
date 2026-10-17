@@ -77,7 +77,7 @@ async function download(path: string | undefined) {
   saving.value = true; notice.value = ''
   const filename = `WM6-${runId.value}-${region.value}-${product.value}-${path.split('/').pop()}`.replace(/\.svgz$/, '.svg')
   try {
-    const response = await fetch(forecastAssetUrl(path), { credentials: 'omit' })
+    const response = await fetch(forecastAssetUrl(path), { credentials: 'omit', cache: 'no-cache' })
     if (!response.ok) throw new Error(`下載失敗（HTTP ${response.status}），可開啟原圖後儲存。`)
     const blob = await forecastDownloadBlob(response, path), url = URL.createObjectURL(blob), a = document.createElement('a')
     a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)

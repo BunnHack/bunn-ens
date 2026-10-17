@@ -62,7 +62,7 @@ await test('Viewer supports keyboard/playback, fullscreen/Escape, zoom and blob-
  const intervals=[],downloads=[]
  t.mock.method(globalThis,'setInterval',(callback,ms)=>{intervals.push({callback,ms});return intervals.length})
  t.mock.method(globalThis,'clearInterval',()=>{})
- t.mock.method(globalThis,'fetch',async url=>String(url).endsWith('index.json')?Response.json(fixture()):new Response('test generated image'))
+ const fetcher=t.mock.method(globalThis,'fetch',async url=>String(url).endsWith('index.json')?Response.json(fixture()):new Response('test generated image'))
  t.mock.method(URL,'createObjectURL',()=> 'blob:forecast-test');t.mock.method(URL,'revokeObjectURL',()=>{})
  t.mock.method(dom.window.HTMLAnchorElement.prototype,'click',function(){downloads.push(this.download)})
  const app=createApp(Panel);app.mount('#app');await settle()
@@ -76,6 +76,7 @@ await test('Viewer supports keyboard/playback, fullscreen/Escape, zoom and blob-
   for(const label of ['下載 SVG','下載 PNG'])await click('.fm-image-controls button',label)
   await click('.fm-bottom-controls button','FORECAST GIF');await click('.fm-bottom-controls button','TREND GIF')
   assert.deepEqual(downloads.map(n=>n.split('-').pop()),['012.svg','012.png','forecast.gif','012.gif'])
+  assert.ok(fetcher.mock.calls.filter(call=>!String(call.arguments[0]).endsWith('index.json')).every(call=>call.arguments[1].cache==='no-cache'))
  }finally{app.unmount()}
 })
 await test('Refresh failure preserves and labels previously published chart data',async t=>{
