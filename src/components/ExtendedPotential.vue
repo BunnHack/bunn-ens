@@ -95,13 +95,18 @@ onBeforeUnmount(() => { ++revision; controller?.abort() })
         <div class="ep-storm-tabs" aria-label="氣旋選擇"><button :class="{ selected: storm === 'all' }" :aria-pressed="storm === 'all'" @click="storm = 'all'">全部獨立路徑</button><button v-for="option in matchedChoices" :key="option.key" :class="{ selected: storm === option.key }" :aria-pressed="storm === option.key" @click="storm = option.key">{{ option.label }}</button></div>
         <p v-if="loading" class="ep-status" role="status">正在載入並固定 {{ modelInfo.label }} 初始化；不沿用其他模型或時次圖…</p>
         <p v-if="error" class="ep-status ep-error" role="alert">{{ error }} <button @click="refresh">重試</button></p>
-        <p v-if="result?.warning" class="ep-status ep-warning" role="status">部分資料未載入：{{ result.warning }}</p>
+        <p v-if="result?.warning" class="ep-status ep-warning" role="status">資料狀態：{{ result.warning }}</p>
         <p v-if="result?.source === 'snapshot'" class="ep-status ep-warning">目前為有日期的本地備份，不是已確認的最新模式；請核對下方初始化與有效日期。</p>
         <p v-if="probability.error" class="ep-status ep-warning" role="status">{{ probability.error }} 不以空白或 100% 圖替代。</p>
         <template v-if="result && catalog && active && !probability.error"><ChartFrame :filename="filename" :title="`${modelInfo.label} ${title} ${windowLabel}`"><BasinPlot :catalog="catalog" :region="region" :theme="theme" :model-label="modelInfo.label" :wind-mode="product === 'ensemble'" :storm="storm === 'all' ? 'All independent tracks' : selectedChoice?.label ?? storm" :mean="mean" :mean-label="meanLabel" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product === 'ensemble' && showHours" :time-anchor="result.wm6?.forecastZero ?? ''" /></ChartFrame></template>
         <div v-else-if="!loading && !error && !probability.error" class="ep-empty">尚無可用圖資。</div>
         <div v-if="result" class="ep-provenance"><p>Model init：<strong>{{ result.catalog.initTime }} UTC</strong><br v-if="result.wm6" /><span v-if="result.wm6">Forecast zero：{{ result.wm6.forecastZero }}（有效時間從此加算）</span></p><p v-if="validTimes.length">有效時間窗：{{ utc(validTimes[0]!) }} → {{ utc(validTimes[1]!) }}</p><p>{{ modelInfo.source }} · {{ result.source === 'remote' ? '供應商資料（以所示初始化為準）' : '明確標示的備份' }} · 查詢完成：{{ result.checkedAt }}（非模型起報時間）</p></div>
-        <section v-if="showInfo" class="ep-method"><h2>圖表說明</h2><p>本頁近程定義 0–120h、中遠期 120–312h（第 5–13 天）。參考圖較長時效不代表本站有資料：本頁不補造 +312h 以後的點。數字時效標籤以 24h 間隔抽樣；右側為此時窗觸及圖域的每個成員原始風速峰值（kt）。</p><p>機率是選定時間窗內，路徑距某點 120 km 內的成員比例。全系統以「同一成員任一獨立氣旋通過」計一次；不連接不同 track ID，也不把生成候選拼成共同風暴。依球面最短弧裁切兩端時窗，不跨越大於 12h 缺口。</p><p>分母採 WM-6 供應商 ens_size，或 WeatherNext 完整 CSV 的成員數，不以畫面剩餘路徑數當分母。CSV 完全省略的成員無法恢復；沒有路徑不代表安全，資料不完整可能低估比例。低於 5% 不畫等值線；城市徽章是市中心點，非縣市面積或受災率。</p><p>原始 max_wind_kt／min_mslp_hpa 不由氣壓換算或放大。均線僅對單一已匹配風暴提供；地名為英文顯示簡寫。Natural Earth 1:50m 僅提供簡化海岸與國界。非官方警報、襲擊率或校準風險。</p></section>
+        <section v-if="showInfo" class="ep-method"><h2>圖表說明</h2>
+          <p>本頁近程定義 0–120h、中遠期 120–312h（第 5–13 天）。參考圖較長時效不代表本站有資料：本頁不補造 +312h 以後的點。數字時效標籤以 24h 間隔抽樣；右側為此時窗觸及圖域的每個成員原始風速峰值（kt）。</p>
+          <p>機率是選定時間窗內，路徑距某點 120 km 內的成員比例。全系統以「同一成員任一獨立氣旋通過」計一次；不連接不同 track ID，也不把生成候選拼成共同風暴。依球面最短弧裁切兩端時窗，不跨越大於 12h 缺口。</p>
+          <p>分母採 WM-6 供應商 ens_size，或 WeatherNext 完整 CSV 的成員數，不以畫面剩餘路徑數當分母。CSV 完全省略的成員無法恢復，可能使分母偏小、比例偏高；缺失或未追蹤到的路徑則可能使比例偏低。沒有路徑不代表安全。低於 5% 不畫等值線；城市徽章是市中心點，非縣市面積或受災率。</p>
+          <p>原始 max_wind_kt／min_mslp_hpa 不由氣壓換算或放大。均線僅對單一已匹配風暴提供；地名為英文顯示簡寫。Natural Earth 1:50m 僅提供簡化海岸與國界。非官方警報、襲擊率或校準風險。</p>
+        </section>
       </section>
       <aside class="ep-controls" aria-label="中遠期預報控制台">
         <h2>控制台</h2><label>模型<select v-model="model" aria-label="Potential model" @change="run = 'latest'; storm = 'all'"><option v-for="item in models" :key="item.id" :value="item.id">{{ item.label }} · {{ item.id }}</option></select></label>

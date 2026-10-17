@@ -73,6 +73,7 @@ await test('New workspace shows real 120–312h tracks, one peak per member, Eng
  try{
   assert.equal(document.querySelector('h1').textContent,'中遠期襲擊潛勢');assert.equal(document.querySelector('[aria-label="Potential start hour"]').value,'120')
   assert.match(document.querySelector('.ep-provenance').textContent,/2026-10-16 18:00:00 UTC/)
+  assert.match(document.querySelector('.ep-method').textContent,/比例偏高/);assert.match(document.querySelector('.ep-method').textContent,/比例偏低/)
   assert.equal(document.querySelectorAll('.potential-member-peaks > text').length,2)
   assert.equal(document.querySelectorAll('.potential-mean line').length,0);assert.equal(document.querySelector('.potential-mean-legend-line'),null)
   assert.ok(document.querySelectorAll('.potential-lead-labels text').length>0)
