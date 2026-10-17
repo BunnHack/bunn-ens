@@ -54,14 +54,15 @@ await test('Screenshot-style viewer switches products, runs, regions and actual 
   assert.equal(document.querySelectorAll('.fm-products > button').length,4)
   assert.equal(document.querySelectorAll('.fm-hour-grid button').length,53)
   assert.ok(document.querySelector('[aria-label="Forecast hour 0"]').disabled);assert.ok(document.querySelector('[aria-label="Forecast hour 312"]').disabled)
-  assert.match(document.querySelector('.fm-chart-image').src,/20261017T0300Z\/east-asia\/precip\/012.png$/)
+  assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/20261017T0300Z\/east-asia\/precip\/012.png$/)
+  assert.equal(new URL(document.querySelector('.fm-chart-image').src).searchParams.get('publication'),fixture().runs[0].generatedAt)
   assert.match(document.querySelector('.fm-time-anchor').textContent,/Forecast zero: 2026-10-17 00:00:00 UTC/)
   assert.match(document.querySelector('.fm-time-anchor').textContent,/Valid: 2026-10-17 12:00:00 UTC/)
-  await click('[aria-label="Previous forecast frame"]');assert.match(document.querySelector('.fm-chart-image').src,/006.png$/)
-  await click('.fm-products > button','Lower Dynamics');await click('[aria-label="Forecast hour 0"]');assert.match(document.querySelector('.fm-chart-image').src,/wind\/000.png$/)
+  await click('[aria-label="Previous forecast frame"]');assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/006.png$/)
+  await click('.fm-products > button','Lower Dynamics');await click('[aria-label="Forecast hour 0"]');assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/wind\/000.png$/)
   await click('.fm-bottom-controls button','Prev. Run');assert.match(document.querySelector('.fm-chart-image').src,/20261017T0200Z/)
   await select('[aria-label="Forecast region"]','north-america');assert.equal(document.querySelector('.fm-chart-image'),null);assert.match(document.querySelector('.fm-empty').textContent,/尚無已發布圖資/)
-  await select('[aria-label="Forecast region"]','west-pacific');assert.match(document.querySelector('.fm-chart-image').src,/west-pacific\/wind\/000.png$/)
+  await select('[aria-label="Forecast region"]','west-pacific');assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/west-pacific\/wind\/000.png$/)
   document.querySelector('.fm-chart-image').dispatchEvent(new dom.window.Event('error'));await settle();assert.match(document.querySelector('[role="alert"]').textContent,/未以其他初始化或產品替代/)
  }finally{app.unmount()}
 })
@@ -75,8 +76,8 @@ await test('Viewer supports keyboard/playback, fullscreen/Escape, zoom and blob-
  const app=createApp(Panel);app.mount('#app');await settle()
  try{
   document.querySelector('.fm-chart-image').dispatchEvent(new dom.window.Event('load'));await settle()
-  await click('.fm-play');intervals.find(i=>i.ms===900).callback();await settle();assert.match(document.querySelector('.fm-chart-image').src,/018.png$/)
-  await click('.fm-play');document.querySelector('#forecast-models').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));await settle();assert.match(document.querySelector('.fm-chart-image').src,/012.png$/)
+  await click('.fm-play');intervals.find(i=>i.ms===900).callback();await settle();assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/018.png$/)
+  await click('.fm-play');document.querySelector('#forecast-models').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));await settle();assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/012.png$/)
   await click('.fm-image-controls button','放大地圖');assert.ok(document.querySelector('.fm-display-enlarged'));assert.equal(document.body.style.overflow,'hidden')
   await click('[aria-label="Zoom in forecast map"]');assert.match(document.querySelector('.fm-chart-image').style.width,/125%/)
   document.querySelector('.fm-display').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await settle();assert.equal(document.querySelector('.fm-display-enlarged'),null);assert.equal(document.body.style.overflow,'')
@@ -85,6 +86,11 @@ await test('Viewer supports keyboard/playback, fullscreen/Escape, zoom and blob-
   assert.deepEqual(downloads.map(n=>n.split('-').pop()),['012.svg','012.png','forecast.gif','012.gif'])
   assert.ok(fetcher.mock.calls.filter(call=>!String(call.arguments[0]).endsWith('index.json')).every(call=>call.arguments[1].cache==='no-cache'))
  }finally{app.unmount()}
+})
+await test('Republishing the same initialization busts image caches without changing the model time or selected hour',async t=>{
+ const source=fixture();t.mock.method(globalThis,'fetch',async()=>Response.json(source))
+ const app=createApp(Panel);app.mount('#app');await settle()
+ try{const old=document.querySelector('.fm-chart-image').src;source.runs[0].generatedAt='2026-10-17T07:00:00Z';source.runs[0].mslpCenters=true;await click('.fm-refresh');const url=new URL(document.querySelector('.fm-chart-image').src);assert.notEqual(url.href,old);assert.equal(url.searchParams.get('publication'),source.runs[0].generatedAt);assert.match(url.pathname,/0300Z\/east-asia\/precip\/012.png$/);assert.match(document.querySelector('.fm-time-anchor').textContent,/Init: 2026-10-17 03:00:00 UTC/);assert.match(document.querySelector('.fm-centers-note').textContent,/紅色 L／藍色 H/)}finally{app.unmount()}
 })
 await test('Refresh failure preserves and labels previously published chart data',async t=>{
  let fail=false;t.mock.method(globalThis,'fetch',async()=>fail?new Response('',{status:503}):Response.json(fixture()))

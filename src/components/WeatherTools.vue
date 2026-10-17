@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { weatherTools } from '../data/weather-tools'
 import BasinEnsemble from './BasinEnsemble.vue'
+import ExtendedPotential from './ExtendedPotential.vue'
 
 const props = defineProps<{ toolId?: string }>()
 const selected = computed(() => weatherTools.find(tool => tool.id === props.toolId))
-const workspace = computed(() => props.toolId === 'basin' || props.toolId === 'typhoon')
+const workspace = computed(() => ['basin', 'typhoon', 'extended'].includes(props.toolId ?? ''))
+const extendedVisited = ref(props.toolId === 'extended')
+watch(() => props.toolId, id => { if (id === 'extended') extendedVisited.value = true })
 </script>
 
 <template>
@@ -16,7 +19,8 @@ const workspace = computed(() => props.toolId === 'basin' || props.toolId === 't
         <a class="tools-home" href="#main-content">返回風暴監測 <span aria-hidden="true">↗</span></a>
       </header>
       <p v-if="!workspace" class="tools-notice">依參考畫面整理的工具入口。縮圖與日期均來自參考截圖，並非即時預報或更新時間；產品接入情況請見詳細頁面。</p>
-      <BasinEnsemble v-if="workspace" :mode="toolId === 'typhoon' ? 'typhoon' : 'basin'" />
+      <template v-if="toolId === 'extended'" />
+      <BasinEnsemble v-else-if="workspace" :mode="toolId === 'typhoon' ? 'typhoon' : 'basin'" />
 
       <article v-else-if="selected" class="tool-detail" :aria-labelledby="`tool-${selected.id}`">
         <a class="tools-back" href="#weather-tools">← 所有氣象工具</a>
@@ -46,6 +50,7 @@ const workspace = computed(() => props.toolId === 'basin' || props.toolId === 't
           </article>
         </section>
       </template>
+      <ExtendedPotential v-if="extendedVisited" v-show="toolId === 'extended'" :active="toolId === 'extended'" />
       <footer class="tools-footer"><span>Weather Tools · 氣象工具</span><span>AI 預報僅供參考，警報與實況請以官方氣象機構為準。</span></footer>
     </main>
   </div>

@@ -16,7 +16,7 @@ const app = createApp(App)
 app.mount('#app')
 
 try {
-  await test('Weather Tools replaces Aircraft Recon with an internal six-card reference interface', async () => {
+  await test('Weather Tools replaces Aircraft Recon with an internal seven-card reference interface', async () => {
     const nav = [...document.querySelectorAll('.main-navigation a')]
     assert.equal(nav.length, 6)
     assert.equal(nav[1].textContent, 'Weather Tools')
@@ -27,10 +27,10 @@ try {
     assert.equal(document.querySelector('#main-content').style.display, 'none')
     assert.equal(nav[1].getAttribute('aria-current'), 'page')
     assert.equal(nav[0].getAttribute('aria-current'), null)
-    assert.equal(document.querySelectorAll('.tool-card').length, 6)
-    assert.deepEqual([...document.querySelectorAll('.tool-card h2')].map(h => h.textContent), ['GIS系集預報', '洋區系集預報', '颱風攻擊機率', 'AIFS 風雨預報', '華南氣象愛好者', '廣東省天氣實況'])
-    assert.equal(document.querySelectorAll('.tool-category').length, 6)
-    assert.equal(document.querySelectorAll('.tool-more').length, 6)
+    assert.equal(document.querySelectorAll('.tool-card').length, 7)
+    assert.deepEqual([...document.querySelectorAll('.tool-card h2')].map(h => h.textContent), ['GIS系集預報', '洋區系集預報', '颱風攻擊機率', '中遠期襲擊潛勢', 'AIFS 風雨預報', '華南氣象愛好者', '廣東省天氣實況'])
+    assert.equal(document.querySelectorAll('.tool-category').length, 7)
+    assert.equal(document.querySelectorAll('.tool-more').length, 7)
     assert.match(document.querySelector('.tools-notice').textContent, /非即時/)
     assert.equal(document.activeElement, document.querySelector('#weather-tools h1'))
   })
@@ -38,6 +38,13 @@ try {
   await test('Every details button has an internal detail view with honest data status and usable links', async () => {
     for (const tool of weatherTools) {
       await navigate(`#weather-tools/${tool.id}`)
+      if (tool.id === 'extended') {
+        assert.equal(document.querySelector('.extended-potential h1').textContent, '中遠期襲擊潛勢')
+        assert.ok(document.querySelector('[aria-label="Potential start hour"]'))
+        assert.equal(document.querySelector('.ep-heading a').getAttribute('href'), '#weather-tools')
+        assert.match(document.querySelector('.ep-method').textContent, /非官方警報/)
+        continue
+      }
       if (tool.id === 'basin') {
         assert.ok(document.querySelector('.basin-layout'))
         assert.equal(document.querySelector('.basin-top h1').textContent, '洋區系集預報')
@@ -62,16 +69,16 @@ try {
       }
     }
     await navigate('#weather-tools')
-    assert.equal(document.querySelectorAll('.tool-card').length, 6)
+    assert.equal(document.querySelectorAll('.tool-card').length, 7)
   })
 
   await test('Unknown tool routes recover and returning to storms preserves model panels', async () => {
     const originalPanel = document.querySelector('.forecast-grid')
     await navigate('#weather-tools/unknown')
     assert.match(document.querySelector('.tools-page [role="status"]').textContent, /找不到此工具/)
-    assert.equal(document.querySelectorAll('.tool-card').length, 6)
+    assert.equal(document.querySelectorAll('.tool-card').length, 7)
     await navigate('#models-title')
-    assert.equal(document.querySelector('#weather-tools'), null)
+    assert.equal(document.querySelector('#weather-tools').closest('.tools-surface').style.display, 'none')
     assert.equal(document.querySelector('#main-content').style.display, '')
     assert.equal(document.querySelector('.forecast-grid'), originalPanel)
     assert.equal(document.querySelector('.main-navigation a').getAttribute('aria-current'), 'page')

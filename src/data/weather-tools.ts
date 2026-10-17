@@ -31,6 +31,12 @@ export const weatherTools: WeatherTool[] = [
     links: [{ label: '開啟本站颱風潛勢／機率預報', href: '#weather-tools/typhoon' }, { label: '前往 ECMWF 圖表', href: 'https://charts.ecmwf.int/', external: true }],
   },
   {
+    id: 'extended', title: '中遠期襲擊潛勢', category: '數值預報', date: '10月17日', image: '/images/weather-tools/extended.webp',
+    description: 'WN2C、WN3C、WM-6 的 120–312h 真實獨立路徑與本站 120 km 通過比例；可切換近程與自訂時窗。',
+    detail: '以三欄工作區查看中遠期系集。全部獨立路徑不合併生成候選、不造共同均線；機率按同一成員任一系統通過某點計一次，非官方襲擊或登陸機率。縮圖只是 2026-10-17 使用者提供的介面參考，不作預報備援。',
+    links: [{ label: '開啟中遠期襲擊潛勢', href: '#weather-tools/extended' }],
+  },
+  {
     id: 'aifs', title: 'AIFS 風雨預報', category: '數值預報', date: '9月14日', image: '/images/weather-tools/aifs.webp',
     description: '參考NHK風格的風雨預報圖，資料來源為AIFS。',
     detail: '以風場與降雨圖了解系統周邊的天氣。此縮圖來自參考截圖，並非即時風雨預報；本站尚未接入 AIFS 風雨格點資料。請由 ECMWF 圖表選擇 AIFS 及所需的起報時間、預報時效與變數。',

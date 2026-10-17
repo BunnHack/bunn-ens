@@ -10,7 +10,8 @@ const run = computed(() => manifest.value?.runs.find(item => item.id === runId.v
 const frames = computed(() => availableForecastFrames(run.value, region.value, product.value))
 const frame = computed(() => frames.value.find(item => item.hour === hour.value))
 const files = computed(() => frame.value?.files[region.value]?.[product.value])
-const imageUrl = computed(() => files.value ? forecastAssetUrl(files.value.png) : '')
+function publishedAsset(path: string) { return `${forecastAssetUrl(path)}?publication=${encodeURIComponent(run.value?.generatedAt ?? '')}` }
+const imageUrl = computed(() => files.value ? publishedAsset(files.value.png) : '')
 const selectedProduct = computed(() => forecastProducts.find(item => item.id === product.value)!)
 const selectedRegion = computed(() => forecastRegions.find(item => item.id === region.value)!)
 const hours = Array.from({ length: 53 }, (_, i) => i * 6)
@@ -77,7 +78,7 @@ async function download(path: string | undefined) {
   saving.value = true; notice.value = ''
   const filename = `WM6-${runId.value}-${region.value}-${product.value}-${path.split('/').pop()}`.replace(/\.svgz$/, '.svg')
   try {
-    const response = await fetch(forecastAssetUrl(path), { credentials: 'omit', cache: 'no-cache' })
+    const response = await fetch(publishedAsset(path), { credentials: 'omit', cache: 'no-cache' })
     if (!response.ok) throw new Error(`下載失敗（HTTP ${response.status}），可開啟原圖後儲存。`)
     const blob = await forecastDownloadBlob(response, path), url = URL.createObjectURL(blob), a = document.createElement('a')
     a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)

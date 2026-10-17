@@ -7,7 +7,7 @@ type Vector = [number, number, number]
 type Position = { lat: number; lon: number }
 type Arc = { a: Vector; b: Vector; normal: Vector; angle: number; start: Position; lengthKm: number }
 type Member = { sample: number; arcs: Arc[] }
-export type ProbabilityField = { region: BasinRegion; radiusKm: number; maxLead: number; denominator: number; trackedMembers: number; step: number; columns: number; rows: number; values: number[]; contours: Array<{ level: number; rings: number[][][] }>; cities: Array<{ name: string; code?: string; enName?: string; hits: number; percent: number; lat: number; lon: number }> }
+export type ProbabilityField = { region: BasinRegion; radiusKm: number; minLead?: number; maxLead: number; allSystems?: boolean; denominator: number; trackedMembers: number; step: number; columns: number; rows: number; values: number[]; contours: Array<{ level: number; rings: number[][][] }>; cities: Array<{ name: string; code?: string; enName?: string; hits: number; percent: number; lat: number; lon: number }> }
 const R = 6371.0088, rad = Math.PI / 180
 const clamp = (v: number) => Math.max(-1, Math.min(1, v))
 const dot = (a: Vector, b: Vector) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -30,37 +30,46 @@ function distance(q: Vector, segment: Arc) {
   if (along >= 0 && along <= segment.angle) return Math.asin(Math.min(1, Math.abs(dot(q, segment.normal)))) * R
   return Math.acos(clamp(Math.max(dot(q, segment.a), dot(q, segment.b)))) * R
 }
-function membersFor(catalog: Catalog, maxLead: number): Member[] {
-  if (new Set(catalog.points.map(point => point.trackId)).size > 1) throw new Error('機率計算必須先選擇單一已匹配氣旋，不合併其他系統。')
-  const groups = new Map<number, TrackPoint[]>()
+export type PassageOptions = { minLead?: number; allSystems?: boolean }
+function membersFor(catalog: Catalog, maxLead: number, options: PassageOptions = {}): Member[] {
+  const minLead = options.minLead ?? 0
+  if (!Number.isFinite(maxLead) || !Number.isFinite(minLead) || minLead < 0 || minLead > maxLead || maxLead > 312) throw new Error('Invalid probability window')
+  if (!options.allSystems && new Set(catalog.points.map(point => point.trackId)).size > 1) throw new Error('機率計算必須先選擇單一已匹配氣旋，不合併其他系統。')
+  const groups = new Map<string, TrackPoint[]>()
   for (const point of catalog.points) {
-    if (point.leadHours < 0 || point.leadHours > 312 || ![point.lat, point.lon].every(Number.isFinite)) continue
-    const group = groups.get(point.sample) ?? []; group.push(point); groups.set(point.sample, group)
+    if (!Number.isFinite(point.leadHours) || point.leadHours < 0 || point.leadHours > 312 || ![point.lat, point.lon].every(Number.isFinite) || Math.abs(point.lat) > 90) continue
+    const key = `${point.sample}\0${point.trackId}`
+    const group = groups.get(key) ?? []; group.push(point); groups.set(key, group)
   }
-  return [...groups].map(([sample, raw]) => {
-    const points = [...raw].sort((a, b) => a.leadHours - b.leadHours)
-    const arcs = points.filter(p => p.leadHours <= maxLead).map(p => arc(p, p))
+  const byMember = new Map<number, Arc[]>()
+  for (const raw of groups.values()) {
+    const sample = raw[0]!.sample, points = [...raw].sort((a, b) => a.leadHours - b.leadHours)
+    const arcs = byMember.get(sample) ?? []
+    arcs.push(...points.filter(p => p.leadHours >= minLead && p.leadHours <= maxLead).map(p => arc(p, p)))
     for (let i = 1; i < points.length; i++) {
       const from = points[i - 1]!, to = points[i]!, gap = to.leadHours - from.leadHours
-      if (from.leadHours >= maxLead || gap <= 0 || gap > 12) continue
+      if (to.leadHours < minLead || from.leadHours > maxLead || gap <= 0 || gap > 12) continue
       const angle = Math.acos(clamp(dot(vector(from), vector(to))))
-      if (angle >= Math.PI - 1e-6) continue // Antipodal/ambiguous arcs are never invented.
-      const fraction = Math.min(1, (maxLead - from.leadHours) / gap), divisions = Math.max(1, Math.ceil(angle * R * fraction / 60))
-      for (let part = 0; part < divisions; part++) arcs.push(arc(interpolate(from, to, fraction * part / divisions), interpolate(from, to, fraction * (part + 1) / divisions)))
+      if (angle >= Math.PI - 1e-6) continue
+      const start = Math.max(0, (minLead-from.leadHours)/gap), end = Math.min(1, (maxLead-from.leadHours)/gap)
+      if (end < start) continue
+      const divisions = Math.max(1, Math.ceil(angle * R * (end-start) / 60))
+      for (let part = 0; part < divisions; part++) arcs.push(arc(interpolate(from, to, start+(end-start)*part/divisions), interpolate(from, to, start+(end-start)*(part+1)/divisions)))
     }
-    return { sample, arcs }
-  }).filter(member => member.arcs.length)
+    byMember.set(sample, arcs) // Union only: never interpolate between different storms.
+  }
+  return [...byMember].map(([sample, arcs]) => ({ sample, arcs })).filter(member => member.arcs.length)
 }
-export function passageAt(catalog: Catalog, position: Position, denominator: number, radiusKm = 120, maxLead = 312) {
-  const members = membersFor(catalog, Math.max(0, Math.min(312, maxLead)))
+export function passageAt(catalog: Catalog, position: Position, denominator: number, radiusKm = 120, maxLead = 312, options: PassageOptions = {}) {
+  const members = membersFor(catalog, Math.max(0, Math.min(312, maxLead)), options)
   if (!Number.isInteger(denominator) || denominator < members.length || denominator <= 1) throw new Error('需要完整系集分母；單成員路徑不能當作氣旋襲擊機率。')
   const q = vector(position), hits = members.filter(member => member.arcs.some(segment => distance(q, segment) <= radiusKm + 1e-6)).length
   return { hits, percent: hits / denominator * 100 }
 }
-export function passageField(catalog: Catalog, region: BasinRegion, denominator: number, radiusKm = 120, maxLead = 312): ProbabilityField {
+export function passageField(catalog: Catalog, region: BasinRegion, denominator: number, radiusKm = 120, maxLead = 312, options: PassageOptions = {}): ProbabilityField {
   if (!Number.isFinite(radiusKm) || radiusKm < 30 || radiusKm > 500 || !Number.isFinite(maxLead)) throw new Error('Invalid probability radius/window')
   maxLead = Math.max(0, Math.min(312, maxLead))
-  const members = membersFor(catalog, maxLead)
+  const members = membersFor(catalog, maxLead, options)
   if (!Number.isInteger(denominator) || denominator < members.length || denominator <= 1) throw new Error('需要完整系集分母；單成員路徑不能當作氣旋襲擊機率。')
   const spanX = region.east - region.west, spanY = region.north - region.south
   if (!(spanX > 0 && spanX <= 360 && spanY > 0 && spanY <= 180)) throw new Error('Invalid probability region')
@@ -90,7 +99,7 @@ export function passageField(catalog: Catalog, region: BasinRegion, denominator:
     const q = vector(place), hits = members.filter(member => member.arcs.some(segment => distance(q, segment) <= radiusKm + 1e-6)).length
     return { ...place, hits, percent: hits / denominator * 100 }
   }).filter(place => place.hits > 0).sort((a, b) => b.hits - a.hits).slice(0, 7)
-  return { region, radiusKm, maxLead, denominator, trackedMembers: members.length, step, columns, rows, values, contours: bands, cities }
+  return { region, radiusKm, minLead: options.minLead ?? 0, maxLead, allSystems: options.allSystems === true, denominator, trackedMembers: members.length, step, columns, rows, values, contours: bands, cities }
 }
 export function focusedProbabilityRegion(field: ProbabilityField): BasinRegion {
   const points = field.contours.find(band => band.level === 5)?.rings.flat() ?? []
