@@ -36,7 +36,7 @@ async function refresh() {
 }
 watch([run, region, product], () => {
   playing.value = false
-  if (!frames.value.some(item => item.hour === hour.value)) hour.value = frames.value.reduce((best, item) => Math.abs(item.hour - hour.value) < Math.abs(best - hour.value) ? item.hour : best, frames.value[0]?.hour ?? 12)
+  if (frames.value.length && !frames.value.some(item => item.hour === hour.value)) hour.value = frames.value.reduce((best, item) => Math.abs(item.hour - hour.value) < Math.abs(best - hour.value) ? item.hour : best, frames.value[0]!.hour)
 })
 watch(imageUrl, () => { imageLoading.value = !!imageUrl.value; imageError.value = ''; zoom.value = 1; if (viewport.value) { viewport.value.scrollLeft = 0; viewport.value.scrollTop = 0 } })
 function step(direction: number, loop = false) {

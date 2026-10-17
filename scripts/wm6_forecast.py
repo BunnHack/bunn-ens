@@ -107,18 +107,22 @@ def precipitation_rate(current, previous):
 
 
 def request(session, path, params=None):
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             response = session.get(API + path, params=params, timeout=(20, 120))
-            if response.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+            if response.status_code in (429, 500, 502, 503, 504) and attempt < 4:
+                try:
+                    delay = float(response.headers.get('Retry-After', '30' if response.status_code == 429 else '5'))
+                except ValueError:
+                    delay = 30
                 response.close()
-                time.sleep(5 * (attempt + 1))
+                time.sleep(min(120, max(1, delay) * (attempt + 1)))
                 continue
             if not response.ok:
                 raise RuntimeError(f'WM-6 HTTP {response.status_code}')
             return response
         except requests.RequestException:
-            if attempt == 2:
+            if attempt == 4:
                 raise RuntimeError('WM-6 network request failed') from None
             time.sleep(5 * (attempt + 1))
     raise RuntimeError('WM-6 request failed')
@@ -335,7 +339,7 @@ def generate(args):
             with requests.Session() as connection:
                 connection.headers.update(session.headers)
                 return download_field(connection, run, hour-3 if field == 'previous_precip' else hour, field)
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {field: pool.submit(fetch_field, field) for field in selected + (['previous_precip'] if 'precip' in selected else [])}
             for field, future in futures.items():
                 try:
@@ -361,9 +365,11 @@ def generate(args):
             record['frames'].append(frame)
     if not record['frames']:
         raise RuntimeError('No real charts generated; refusing to replace published charts')
+    history = [item for item in previous.get('runs', []) if item.get('id') != identifier and item.get('id', '').isalnum() and (out / 'runs' / item['id']).is_dir()][:1]
+    records = sorted([record] + history, key=lambda item: utc(item['initializationTime']), reverse=True)
+    older = next((item for item in history if utc(item['initializationTime']) < utc(record['initializationTime'])), None)
+    build_animations(record, older, out)
     record['generatedAt'] = iso(datetime.now(timezone.utc))
-    records = [record] + [item for item in previous.get('runs', []) if item.get('id') != identifier and item.get('id', '').isalnum() and (out / 'runs' / item['id']).is_dir()][:1]
-    build_animations(record, records[1] if len(records) > 1 else None, out)
     manifest = {'version': 1, 'model': 'WM-6', 'statistic': 'ensemble_mean', 'ensembleSize': 128, 'resolutionDegrees': .25, 'products': PRODUCTS, 'regions': REGIONS, 'runs': records}
     temporary = out / 'index.next.json'
     temporary.write_text(json.dumps(manifest, ensure_ascii=False, separators=(',', ':')))
