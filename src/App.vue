@@ -27,7 +27,7 @@ const forecasts = ref<Forecast[]>([
   { id: 'global', title: 'Global + Hurricane Models', image: '/images/global-models.png', description: 'Deterministic model track guidance', cycle: '06z' },
   { id: 'wnc2', title: 'WNC2 Ensembles', description: 'WeatherNext 2 Cyclones · FNV3.2', cycle: '06z' },
   { id: 'wm6', title: 'WM-6 Ensemble', image: '/images/eps-ensembles.png', description: 'WindBorne tropical cyclone ensemble tracker', cycle: '06z' },
-  { id: 'intensity', title: 'Intensity Guidance', description: 'Model intensity forecasts', cycle: '06z' },
+  { id: 'intensity', title: 'Intensity Guidance', image: '/images/21E-intensity-reference.png', description: '21E TRUDY · 00Z Oct 17, 2026 · supplied reference', cycle: '00z' },
 ])
 const stormDetails = [
   { label: 'Location', value: '9.7°N 162.6°E' },
@@ -160,10 +160,11 @@ onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener(
               <div class="forecast-heading"><h3>{{ forecast.title }}</h3><p>{{ forecast.description }}</p></div>
               <Wnc2Ensemble v-if="forecast.id === 'wnc2'" />
               <Wm6Ensemble v-else-if="forecast.id === 'wm6'" />
-              <button v-else-if="forecast.image" class="image-button forecast-image" :aria-label="`Enlarge ${forecast.title} reference image`" @click="openImage(forecast.title, forecast.image, 'Static 06z reference image from the supplied screenshot.')"><img :src="forecast.image" :alt="`${forecast.title} track forecast for Invest 96W`" /><span class="image-overlay"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge</span></button>
-              <div v-else class="missing-image"><span class="material-icons-round" aria-hidden="true">image_not_supported</span><strong>Image unavailable</strong><p>The intensity chart did not load in the original screenshot.</p></div>
-              <div v-if="forecast.id !== 'wnc2' && forecast.id !== 'wm6'" class="cycle-selector" :aria-label="`${forecast.title} model cycle`"><button v-for="cycle in cycles" :key="cycle" :class="{ selected: forecast.cycle === cycle }" :aria-pressed="forecast.cycle === cycle" @click="selectCycle(forecast, cycle)">{{ cycle }}</button></div>
-              <p v-if="forecast.id !== 'wnc2' && forecast.id !== 'wm6' || forecast.id === 'wm6' && forecast.image" class="cycle-note">{{ forecast.cycle === '06z' ? (forecast.id === 'wm6' ? 'WM-6 live tracker' : '06z screenshot reference') : `${forecast.cycle} unavailable · showing 06z reference` }}</p>
+              <button v-else-if="forecast.image" class="image-button forecast-image" :aria-label="`Enlarge ${forecast.title} reference image`" @click="openImage(forecast.title, forecast.image, forecast.id === 'intensity' ? 'Supplied reference: Hurricane TRUDY (21E), initialized 00Z Oct 17, 2026. Not live and not an intensity forecast for Invest 96W.' : 'Static 06z reference image from the supplied screenshot.')"><img :src="forecast.image" :alt="forecast.id === 'intensity' ? 'Hurricane TRUDY (21E) Model Intensity Guidance initialized 00Z Oct 17 2026, supplied reference' : `${forecast.title} track forecast for Invest 96W`" /><span class="image-overlay"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge</span></button>
+              <div v-else class="missing-image"><span class="material-icons-round" aria-hidden="true">image_not_supported</span><strong>Image unavailable</strong></div>
+              <div v-if="forecast.id === 'intensity'" class="intensity-reference-note"><p>提供的 TRUDY（21E）強度指引圖 · 2026-10-17 00Z · 靜態參考，非即時更新，也不是 96W 的預報。</p><a href="/images/21E-intensity-reference.png" download="21E-TRUDY-intensity-2026101700-reference.png">Download PNG · 手機可開啟大圖後長按儲存</a></div>
+              <div v-if="forecast.id === 'global'" class="cycle-selector" :aria-label="`${forecast.title} model cycle`"><button v-for="cycle in cycles" :key="cycle" :class="{ selected: forecast.cycle === cycle }" :aria-pressed="forecast.cycle === cycle" @click="selectCycle(forecast, cycle)">{{ cycle }}</button></div>
+              <p v-if="forecast.id === 'global'" class="cycle-note">{{ forecast.cycle === '06z' ? '06z screenshot reference' : `${forecast.cycle} unavailable · showing 06z reference` }}</p>
             </article>
           </div>
         </section>

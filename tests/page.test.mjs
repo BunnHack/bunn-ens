@@ -41,7 +41,7 @@ await test('Retain reference content rather than the invented dashboard', () => 
   assert.equal(document.querySelectorAll('.main-navigation a').length, 6)
   assert.equal(document.querySelectorAll('.storm-details > div').length, 6)
   assert.equal(document.querySelectorAll('.forecast-card').length, 4)
-  assert.equal(document.querySelectorAll('.image-button img').length, 3)
+  assert.equal(document.querySelectorAll('.image-button img').length, 4)
   assert.ok(document.body.textContent.includes('WM-6 Ensemble'))
   assert.ok(document.body.textContent.includes('WNC2 Ensembles'))
   assert.ok(!document.body.textContent.includes('GFS Ensembles'))
@@ -52,7 +52,8 @@ await test('Retain reference content rather than the invented dashboard', () => 
   assert.ok(document.body.textContent.includes('9.7°N 162.6°E'))
   assert.ok(document.body.textContent.includes('1008 mb'))
   assert.ok(document.body.textContent.includes('Screenshot reference · not live'))
-  assert.ok(document.body.textContent.includes('The intensity chart did not load'))
+  assert.match(document.querySelector('.intensity-reference-note').textContent, /TRUDY.*2026-10-17 00Z.*不是 96W/)
+  assert.ok(document.querySelector('.intensity-reference-note a[download]'))
   assert.equal(document.querySelector('.sidebar'), null)
   assert.ok(!document.body.textContent.includes('Jordan'))
 })
@@ -96,6 +97,14 @@ await test('Model acronym reference opens and closes', async () => {
   await click(document.querySelector('.filled-button'))
 })
 
+await test('Intensity Guidance opens the supplied TRUDY reference without pretending it belongs to 96W', async () => {
+  await click(document.querySelector('[aria-label="Enlarge Intensity Guidance reference image"]'))
+  assert.equal(document.querySelector('.preview-image').getAttribute('src'), '/images/21E-intensity-reference.png')
+  assert.match(document.querySelector('.dialog-copy').textContent, /TRUDY.*00Z Oct 17, 2026.*Not live.*not an intensity forecast for Invest 96W/)
+  const bytes = await readFile('public/images/21E-intensity-reference.png')
+  assert.equal(bytes.readUInt32BE(16), 768); assert.equal(bytes.readUInt32BE(20), 600)
+  await click(document.querySelector('[aria-label="Close dialog"]'))
+})
 await test('All local reference assets exist with PNG signatures', async () => {
   const paths = [...document.querySelectorAll('img')].map(image => image.getAttribute('src'))
   for (const path of paths) {

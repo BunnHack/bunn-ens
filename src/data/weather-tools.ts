@@ -27,8 +27,8 @@ export const weatherTools: WeatherTool[] = [
   {
     id: 'strike', title: '颱風攻擊機率', category: '數值預報', date: '9月12日', image: '/images/weather-tools/strike.webp',
     description: '包含ECMWF、WNC、EAGLE等數值預報模式、AI模式的颱風攻擊機率預報',
-    detail: '攻擊機率需要明確的距離、時間範圍與成員分母，不能將路徑密集區直接當作機率。本卡片目前是參考產品介紹，本站尚未接入 ECMWF、WNC、EAGLE 攻擊機率資料；可前往 ECMWF 圖表查閱可用的熱帶氣旋產品。',
-    links: [{ label: '前往 ECMWF 圖表', href: 'https://charts.ecmwf.int/', external: true }],
+    detail: '本站現可依 WNC2、WNC3 或 WM-6 真實成員路徑計算 120 km 通過比例，請在颱風潛勢頁選擇「機率預報」。圖上列明時窗與系集分母，非官方襲擊、登陸或損害機率。此縮圖仍為參考畫面；ECMWF、EAGLE 官方攻擊機率資料尚未接入，可另至 ECMWF 圖表查閱。',
+    links: [{ label: '開啟本站颱風潛勢／機率預報', href: '#weather-tools/typhoon' }, { label: '前往 ECMWF 圖表', href: 'https://charts.ecmwf.int/', external: true }],
   },
   {
     id: 'aifs', title: 'AIFS 風雨預報', category: '數值預報', date: '9月14日', image: '/images/weather-tools/aifs.webp',

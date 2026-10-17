@@ -191,4 +191,5 @@ footer { display: flex; justify-content: space-between; gap: 14px; padding: 25px
   .dialog-heading h2 { font-size: 18px; }
   .dialog-backdrop { padding: 12px; }
 }
+.intensity-reference-note { padding: 14px 18px; font-size: 12px; line-height: 1.8; color: #6c7d91; }.intensity-reference-note p { margin: 0 0 8px; }.intensity-reference-note a { display: inline-block; color: #287da9; border: 1px solid #8dbfda; padding: 7px 12px; border-radius: 18px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }

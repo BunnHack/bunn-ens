@@ -58,7 +58,7 @@ try {
         if (link.getAttribute('href').startsWith('https:')) {
           assert.equal(link.target, '_blank')
           assert.match(link.rel, /noopener/)
-        } else assert.equal(link.getAttribute('href'), '#models-title')
+        } else assert.ok(['#models-title', '#weather-tools/typhoon'].includes(link.getAttribute('href')))
       }
     }
     await navigate('#weather-tools')

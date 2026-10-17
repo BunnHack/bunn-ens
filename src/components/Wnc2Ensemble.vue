@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Wnc2Plot from './Wnc2Plot.vue'
+import ChartFrame from './ChartFrame.vue'
 import { analyze96W, ensembleFromPoints, loadEnsemble, sourceUrl, trackOptions, REFRESH_MS, SNAPSHOT_RUN, type Cycle, type DataResult, type Model } from '../data/wnc2'
 
 const result = ref<DataResult | null>(null)
@@ -73,7 +74,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
       <label class="track-field">System / sample-specific genesis track<select v-model="selectedTrack" aria-label="WNC2 system"><option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}</option></select></label>
       <label class="lead-field">Forecast window: 0–{{ maxLead }}h <input v-model.number="maxLead" type="range" min="0" max="312" step="6" aria-label="Maximum forecast lead hours" /></label>
       <p class="lead-caption">Selected track available through +{{ availableMax }}h. No positions are invented beyond its lifetime.</p>
-      <Wnc2Plot v-if="data" :key="`${initialized}-${selectedTrack}`" :data="data" :max-lead="maxLead" />
+      <ChartFrame v-if="data" :filename="`WNC2-${selectedTrack.replace(/[^A-Za-z0-9_-]/g, '-')}-${result.run.date}-${result.run.cycle}-0-${maxLead}h`" :title="`WNC2 ${selectedTrack}`"><Wnc2Plot :key="`${initialized}-${selectedTrack}`" :data="data" :max-lead="maxLead" /></ChartFrame>
       <div class="wnc2-controls"><button class="text-button" @click="enlarged = true" :disabled="!data"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge chart</button><button class="text-button" @click="refresh()" :disabled="loading" aria-label="Reload WNC2 CSV"><span class="material-icons-round" aria-hidden="true">refresh</span></button></div>
       <p class="data-status" :class="result.source">{{ result.source === 'remote' ? 'WeatherNext CSV connected' : 'Offline CSV snapshot — not confirmed latest' }} · {{ result.catalog.totalSamples }} ensemble samples</p>
       <p class="checked-at">Checked {{ result.checkedAt.replace('T', ' ').slice(0,19) }} UTC</p>
@@ -92,7 +93,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
       <dialog open class="dialog wnc2-dialog" aria-modal="true" aria-labelledby="wnc2-dialog-title">
         <div class="dialog-heading"><div><h2 id="wnc2-dialog-title">WNC2 Ensembles · {{ data.trackId }}</h2><p class="dialog-copy">{{ initialized }} UTC · {{ result.run.model }} · 0–{{ maxLead }}h</p></div><button class="icon-button" autofocus aria-label="Close WNC2 chart" @click="enlarged = false"><span class="material-icons-round" aria-hidden="true">close</span></button></div>
         <label class="lead-field">Forecast window: 0–{{ maxLead }}h<input v-model.number="maxLead" type="range" min="0" max="312" step="6" aria-label="Enlarged maximum forecast lead hours" /></label>
-        <div class="wnc2-full-chart"><Wnc2Plot :key="`${initialized}-${selectedTrack}`" :data="data" :max-lead="maxLead" /></div>
+        <div class="wnc2-full-chart"><ChartFrame :filename="`WNC2-${selectedTrack.replace(/[^A-Za-z0-9_-]/g, '-')}-${result.run.date}-${result.run.cycle}-0-${maxLead}h`" :title="`WNC2 ${selectedTrack}`"><Wnc2Plot :key="`${initialized}-${selectedTrack}`" :data="data" :max-lead="maxLead" /></ChartFrame></div>
         <p class="dialog-copy">Select a member label to highlight its track. Segment colors use wind at the starting point. Mean averages available members, with at least 25% coverage; separate genesis IDs are not merged. Coastlines: Natural Earth (public domain), regional coverage. AI forecast, not an official warning.</p>
         <p class="dialog-copy">Source: {{ result.source }}. {{ result.warning }}</p>
       </dialog>
