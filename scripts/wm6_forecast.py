@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Generate real WM-6 ensemble-mean charts; credentials and native grids stay private."""
 import argparse
+import base64
+import tempfile
+from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
@@ -68,8 +71,8 @@ def verify_metadata(attrs, run, hour):
         if isinstance(value, np.ndarray):
             return value.item()
         return value
-    if scalar(attrs.get('model')) != 'wm-6':
-        raise ValueError('Unexpected NetCDF model')
+    if scalar(attrs.get('model')) not in ('wm-6', 'WM 6 Global'):
+        raise ValueError('Unexpected native model')
     for key in ['initialization_time', 'forecast_zero']:
         if utc(scalar(attrs[key])) != utc(run[key]):
             raise ValueError('NetCDF run/forecast_zero mismatch')
@@ -107,9 +110,19 @@ def precipitation_rate(current, previous):
     return (np.asarray(current) + np.asarray(previous)) / 6
 
 
+_next_api_request = 0
+API_INTERVAL = float(os.environ.get('WM_API_INTERVAL_SECONDS', '15'))
+
+
 def request(session, path, params=None):
+    global _next_api_request
     for attempt in range(5):
         try:
+            now = time.monotonic()
+            delay = max(0, _next_api_request - now)
+            _next_api_request = max(now, _next_api_request) + API_INTERVAL
+            if delay:
+                time.sleep(delay)
             response = session.get(API + path, params=params, timeout=(20, 120))
             if response.status_code in (429, 500, 502, 503, 504) and attempt < 4:
                 try:
@@ -117,7 +130,7 @@ def request(session, path, params=None):
                 except ValueError:
                     delay = 30
                 response.close()
-                time.sleep(min(120, max(1, delay) * (attempt + 1)))
+                time.sleep(min(120, max(15 if response.status_code == 429 else 1, delay) * (attempt + 1)))
                 continue
             if not response.ok:
                 raise RuntimeError(f'WM-6 HTTP {response.status_code}')
@@ -149,6 +162,70 @@ def download_field(session, run, hour, key):
         if values.shape != (len(lat), len(lon)) or len(lat) < 2 or len(lon) < 2:
             raise ValueError('Unexpected grid dimensions/statistic')
         return lat, lon, convert_field(values, field.attrs['units'], key)
+
+
+def archive_part(url, part):
+    """Read only advertised Zarr payload bytes; never forward the provider API key."""
+    if 'inline' in part:
+        return base64.b64decode(part['inline'], validate=True)
+    start, end = part['range']
+    if not isinstance(start, int) or not isinstance(end, int) or start < 0 or not 0 <= end - start < 64 * 1024 * 1024:
+        raise ValueError('Invalid archive byte range')
+    for attempt in range(4):
+        try:
+            with requests.get(url, headers={'Range': f'bytes={start}-{end}'}, stream=True, timeout=(20, 120)) as response:
+                if response.status_code != 206 or not response.headers.get('Content-Range', '').startswith(f'bytes {start}-{end}/'):
+                    raise ValueError('Archive server did not honor the byte range')
+                data = b''.join(response.iter_content(65536))
+            if len(data) != end - start + 1:
+                raise ValueError('Incomplete archive byte range')
+            return data
+        except (requests.RequestException, ValueError):
+            if attempt == 3:
+                raise RuntimeError('Archive byte-range download failed') from None
+            time.sleep(2 * (attempt + 1))
+
+
+def download_archive_fields(session, run, hour, keys):
+    """One authenticated locator per hour; fetch only required ensemble-mean Zarr bytes."""
+    import zarr
+    names = {}
+    for key in keys:
+        variable, level = FIELDS['precip' if key == 'previous_precip' else key]
+        names[key] = f'{variable}_{level}' if level is not None else variable
+    params = {'variable': 'all' if len(keys) > 1 else next(iter(names.values())), 'format': 'zarr', 'as_url': 'true',
+              'initialization_time': run['initialization_time'], 'forecast_hour': hour}
+    with request(session, '/gridded', params) as response:
+        locator = response.json()
+    url = locator['url']
+    parsed = urlparse(url)
+    if parsed.scheme != 'https' or not parsed.hostname or not parsed.hostname.endswith(('.r2.cloudflarestorage.com', '.amazonaws.com', '.windbornesystems.com')):
+        raise ValueError('Unexpected archive origin')
+    prefixes = ['latitude/', 'longitude/'] + [f'ensemble_mean/{name}/' for name in names.values()]
+    parts = [part for part in locator['parts'] if part['path'] in ('zarr.json', 'ensemble_mean/zarr.json') or any(part['path'].startswith(prefix) for prefix in prefixes)]
+    with tempfile.TemporaryDirectory(prefix='wm6-native-') as directory:
+        def fetch_part(part):
+            relative = Path(part['path'])
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('Invalid archive path')
+            destination = Path(directory) / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(archive_part(url, part))
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            list(pool.map(fetch_part, parts))
+        group = zarr.open_group(directory, mode='r')
+        verify_metadata(dict(group.attrs), run, hour)
+        lat, lon = np.asarray(group['latitude'][:], dtype=float), np.asarray(group['longitude'][:], dtype=float)
+        result = {}
+        for key, name in names.items():
+            array = group[f'ensemble_mean/{name}']
+            if array.attrs.get('product_type') != 'ensemble_mean' or array.shape != (len(lat), len(lon)):
+                raise ValueError('Unexpected archive grid/statistic')
+            values = convert_field(array[:], array.attrs['units'], key)
+            if not np.isfinite(values).any():
+                raise ValueError('Archive contains no valid field values')
+            result[key] = lat, lon, values
+        return result
 
 
 def regional_grid(field, region):
@@ -344,29 +421,48 @@ def generate(args):
     manifest_path = out / 'index.json'
     previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'runs': []}
     current_directory = out / 'runs' / identifier
-    if current_directory.is_dir():
-        shutil.rmtree(current_directory)  # never leave old products mixed into a regenerated run
+    cached_run = next((item for item in previous.get('runs', []) if item.get('id') == identifier and item.get('generatorVersion') == 'native-zarr-v1' and utc(item['forecastZero']) == utc(run['forecast_zero'])), None)
+    if current_directory.is_dir() and cached_run is None:
+        shutil.rmtree(current_directory)
     record = {'id': identifier, 'initializationTime': iso(utc(run['initialization_time'])), 'forecastZero': iso(utc(run['forecast_zero'])), 'generatedAt': '', 'upstreamInProgress': bool(run.get('in_progress')), 'upstreamHours': available, 'requestedMaxHour': args.max_hour, 'frames': [], 'failures': []}
+    record['generatorVersion'] = 'native-zarr-v1'
+    requested = {int(value) for value in args.hours.split(',')} if args.hours else set(hours)
+    if not requested or any(hour < 0 or hour > args.max_hour or hour % 6 for hour in requested):
+        raise ValueError('Requested hours must be comma-separated 0–312h multiples of six')
+    record['requestedHours'] = sorted(requested)
+    verified = False
     for hour in hours:
+        cached = next((frame for frame in (cached_run or {}).get('frames', []) if frame['hour'] == hour), None)
+        expected = [product['id'] for product in PRODUCTS if hour >= 6 or product['id'] != 'precip']
+        if cached and all(cached['files'].get(region['id'], {}).get(product) and all((out / cached['files'][region['id']][product][ext]).is_file() for ext in ('png', 'svg')) for region in REGIONS for product in expected):
+            record['frames'].append(cached)
+            print(f'Reusing verified WM-6 {identifier} +{hour:03d}h chart assets', flush=True)
+            continue
+        if hour not in requested:
+            continue
         print(f'Generating WM-6 {identifier} +{hour:03d}h', flush=True)
         fields = {}
         selected = list(FIELDS) if hour >= 6 and hour-3 in available else [field for field in FIELDS if field != 'precip']
-        def fetch_field(field):
-            with requests.Session() as connection:
-                connection.headers.update(session.headers)
-                return download_field(connection, run, hour-3 if field == 'previous_precip' else hour, field)
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = {field: pool.submit(fetch_field, field) for field in selected + (['previous_precip'] if 'precip' in selected else [])}
-            for field, future in futures.items():
-                try:
-                    fields[field] = future.result()
-                    if field != next(iter(fields)):
-                        first = next(iter(fields.values()))
-                        if not np.array_equal(first[0], fields[field][0]) or not np.array_equal(first[1], fields[field][1]):
-                            raise ValueError('Grid coordinates mismatch')
-                except (RuntimeError, ValueError, KeyError, OSError) as error:
-                    fields.pop(field, None)
-                    record['failures'].append({'hour': hour, 'field': field, 'reason': str(error)[:160]})
+        try:
+            fields.update(download_archive_fields(session, run, hour, selected))
+        except (RuntimeError, ValueError, KeyError, OSError) as error:
+            record['failures'].append({'hour': hour, 'field': 'ensemble_mean_archive', 'reason': str(error)[:160]})
+        if 'precip' in fields:
+            try:
+                fields.update(download_archive_fields(session, run, hour-3, ['previous_precip']))
+            except (RuntimeError, ValueError, KeyError, OSError) as error:
+                record['failures'].append({'hour': hour, 'field': 'previous_precip', 'reason': str(error)[:160]})
+        if fields:
+            first = next(iter(fields.values()))
+            if any(not np.array_equal(first[0], field[0]) or not np.array_equal(first[1], field[1]) for field in fields.values()):
+                raise ValueError('Grid coordinates mismatch')
+        if not verified and 'pressure_msl' in fields:
+            reference = regional_grid(download_field(session, run, hour, 'pressure_msl'), {'bounds': [-180, 180, -90, 90]})
+            candidate = regional_grid(fields['pressure_msl'], {'bounds': [-180, 180, -90, 90]})
+            if any(not np.allclose(left, right, rtol=1e-6, atol=1e-6, equal_nan=True) for left, right in zip(reference, candidate)):
+                raise ValueError('Archive/NetCDF physical-value verification failed')
+            verified = True
+            print('Native archive agrees with independently served NetCDF pressure and coordinates.', flush=True)
         frame = {'hour': hour, 'validTime': iso(utc(run['forecast_zero']) + timedelta(hours=hour)), 'files': {}}
         for region in REGIONS:
             frame['files'][region['id']] = {}
@@ -410,5 +506,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--initialization', default='latest')
     parser.add_argument('--max-hour', type=int, default=312, choices=range(0, 313, 6))
+    parser.add_argument('--hours', default='', help='Optional comma-separated published hours; empty generates all available 6-hourly frames')
     parser.add_argument('--output', default='.generated-site/forecast-models')
     generate(parser.parse_args())

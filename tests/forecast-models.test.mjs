@@ -97,6 +97,6 @@ await test('Forecast Models is an internal deep link and returning to storms pre
 await test('Actions limits credentials to generation and publishes only chart assets on a schedule',async()=>{
  const yaml=await readFile('.github/workflows/wm6-forecast-charts.yml','utf8')
  assert.match(yaml,/schedule:/);assert.match(yaml,/secrets.WM_API_KEY/);assert.match(yaml,/id-token: write/);assert.match(yaml,/actions\/deploy-pages@/);assert.match(yaml,/path: .generated-site\n/);assert.ok(!/secrets.GITHUB|ghp_|wb_[A-Za-z0-9_-]{20}/.test(yaml))
- const py=await readFile('scripts/wm6_forecast.py','utf8');assert.match(py,/ThreadPoolExecutor\(max_workers=2\)/);assert.match(py,/verify_metadata\(dataset.attrs, run, hour\)/)
+ const py=await readFile('scripts/wm6_forecast.py','utf8');assert.match(py,/ThreadPoolExecutor\(max_workers=6\)/);assert.match(py,/verify_metadata\(dataset.attrs, run, hour\)/);assert.match(py,/download_archive_fields/);assert.match(py,/API_INTERVAL.*'15'/);assert.match(yaml,/WM_API_INTERVAL_SECONDS: '15'/)
 })
 dom.window.close()

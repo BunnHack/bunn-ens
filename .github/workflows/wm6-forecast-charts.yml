@@ -12,6 +12,10 @@ on:
         description: 'Maximum forecast hour (0–312, multiple of 6)'
         default: '312'
         type: string
+      hours:
+        description: 'Optional comma-separated hours, e.g. 0,6,12,312 (empty = full sequence)'
+        default: ''
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -20,7 +24,7 @@ concurrency:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
       pages: write
@@ -44,12 +48,14 @@ jobs:
           path: .generated-site/forecast-models
           key: wm6-chart-history-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: wm6-chart-history-
-      - name: Generate charts from native WM-6 NetCDF
+      - name: Generate charts from authenticated native WM-6 archive byte ranges
         env:
           WM_API_KEY: ${{ secrets.WM_API_KEY }}
           INITIALIZATION: ${{ inputs.initialization || 'latest' }}
           MAX_HOUR: ${{ inputs.max_hour || '312' }}
-        run: python scripts/wm6_forecast.py --initialization "$INITIALIZATION" --max-hour "$MAX_HOUR"
+          HOURS: ${{ inputs.hours || '' }}
+          WM_API_INTERVAL_SECONDS: '15'
+        run: python scripts/wm6_forecast.py --initialization "$INITIALIZATION" --max-hour "$MAX_HOUR" --hours "$HOURS"
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload generated charts only

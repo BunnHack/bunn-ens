@@ -71,16 +71,53 @@ class ForecastTests(unittest.TestCase):
                 self.assertNotIn('GFS', text)
 
     def test_rate_limit_retries_respect_delay_and_do_not_expose_response_body(self):
-        limited = MagicMock(status_code=429, ok=False, headers={'Retry-After': '7'})
+        limited = MagicMock(status_code=429, ok=False, headers={'Retry-After': '17'})
         success = MagicMock(status_code=200, ok=True)
         session = MagicMock(); session.get.side_effect = [limited, success]
-        with patch.object(wm6.time, 'sleep') as sleep:
+        with patch.object(wm6, 'API_INTERVAL', 0), patch.object(wm6, '_next_api_request', 0), patch.object(wm6.time, 'sleep') as sleep:
             self.assertIs(wm6.request(session, '/gridded'), success)
-            sleep.assert_called_once_with(7)
+            sleep.assert_called_once_with(17)
         session.get.side_effect = wm6.requests.Timeout('private diagnostic')
         with patch.object(wm6.time, 'sleep'):
             with self.assertRaisesRegex(RuntimeError, '^WM-6 network request failed$'):
                 wm6.request(session, '/gridded')
+
+    def test_api_limiter_reserves_one_request_every_fifteen_seconds(self):
+        response = MagicMock(status_code=200, ok=True)
+        session = MagicMock(); session.get.return_value = response
+        with patch.object(wm6, 'API_INTERVAL', 15), patch.object(wm6, '_next_api_request', 0), patch.object(wm6.time, 'monotonic', return_value=0), patch.object(wm6.time, 'sleep') as sleep:
+            wm6.request(session, '/run_information'); wm6.request(session, '/gridded')
+            sleep.assert_called_once_with(15)
+
+    def test_archive_range_never_forwards_api_credentials_or_downloads_whole_zip(self):
+        response = MagicMock(status_code=206, headers={'Content-Range': 'bytes 12-14/100'})
+        response.__enter__.return_value = response; response.iter_content.return_value = [b'abc']
+        with patch.object(wm6.requests, 'get', return_value=response) as get:
+            self.assertEqual(wm6.archive_part('https://example.r2.cloudflarestorage.com/signed', {'range': [12, 14]}), b'abc')
+            self.assertEqual(get.call_args.kwargs['headers'], {'Range': 'bytes=12-14'})
+            self.assertTrue(get.call_args.kwargs['stream'])
+        for value in [[-1, 0], [0, 2**32]]:
+            with self.assertRaises(ValueError): wm6.archive_part('unused', {'range': value})
+
+    @unittest.skipUnless(importlib.util.find_spec('zarr'), 'Native Zarr reader runs on Ubuntu Actions')
+    def test_archive_reader_pins_run_and_decodes_only_requested_ensemble_mean_fields(self):
+        import zarr
+        import base64
+        with tempfile.TemporaryDirectory() as directory:
+            group = zarr.open_group(directory, mode='w')
+            group.attrs.update({**RUN, 'forecast_hour': 12, 'model': 'WM 6 Global'})
+            group.create_array('latitude', data=np.array([10., 20.])); group.create_array('longitude', data=np.array([140., 150.]))
+            mean = group.create_group('ensemble_mean')
+            array = mean.create_array('pressure_msl', data=np.ones((2, 2))*100000)
+            array.attrs.update({'units': 'Pa', 'product_type': 'ensemble_mean'})
+            parts = [{'path': str(path.relative_to(directory)), 'inline': base64.b64encode(path.read_bytes()).decode()} for path in Path(directory).rglob('*') if path.is_file()]
+            response = MagicMock(); response.__enter__.return_value.json.return_value = {'url': 'https://example.r2.cloudflarestorage.com/signed', 'parts': parts}
+            with patch.object(wm6, 'request', return_value=response) as request:
+                fields = wm6.download_archive_fields(None, RUN, 12, ['pressure_msl'])
+                np.testing.assert_allclose(fields['pressure_msl'][2], 1000)
+                self.assertEqual(request.call_args.args[2]['initialization_time'], RUN['initialization_time'])
+                self.assertEqual(request.call_args.args[2]['forecast_hour'], 12)
+                self.assertEqual(request.call_args.args[2]['as_url'], 'true')
 
     def test_forecast_and_trend_gifs_only_use_matching_valid_times(self):
         from PIL import Image
