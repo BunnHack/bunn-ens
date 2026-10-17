@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFile } from 'node:fs/promises'
+import { gzipSync } from 'node:zlib'
 import { JSDOM } from 'jsdom'
 import { compileFile } from './compile.mjs'
 const dom=new JSDOM('<div id="app"></div>',{url:'https://example.test/',pretendToBeVisual:true})
@@ -21,6 +22,15 @@ await test('Generated chart manifest enforces WM-6 statistic, source paths, run 
  for(const mutate of [x=>x.model='GFS',x=>x.statistic='deterministic',x=>x.runs[0].id='20261017T0400Z',x=>x.runs[0].frames[2].validTime='2026-10-17T15:00:00Z',x=>x.runs[0].frames[2].hour=318,x=>x.runs[0].frames[2].files['east-asia'].precip.png='https://evil.test/map.png',x=>x.runs[0].frames.push(x.runs[0].frames[2])]){const bad=fixture();mutate(bad);assert.throws(()=>data.parseForecastManifest(bad))}
  assert.throws(()=>data.forecastAssetUrl('../secrets.json'));assert.throws(()=>data.forecastAssetUrl('https://evil.test/x.png'))
  assert.match(data.forecastAssetUrl(parsed.runs[0].frames[2].files['east-asia'].precip.svg),/^https:\/\/bunnhack.github.io\/bunn-ens\/forecast-models\/runs\//)
+})
+await test('Compressed SVG publication is lossless and downloads as a normal SVG, including already-decoded CDN responses',async t=>{
+ const svg='<svg xmlns="http://www.w3.org/2000/svg"><title>WM-6 +12h</title><path d="M1 2L3 4"/></svg>'
+ const source=fixture();for(const frame of source.runs[0].frames)for(const group of Object.values(frame.files))for(const files of Object.values(group))files.svg+='z'
+ assert.ok(data.parseForecastManifest(source).runs[0].frames[2].files['east-asia'].precip.svg.endsWith('.svgz'))
+ for(const body of [gzipSync(svg),svg]){const blob=await data.forecastDownloadBlob(new Response(body),'012.svgz');assert.equal(await blob.text(),svg);assert.match(blob.type,/image\/svg\+xml/)}
+ await assert.rejects(data.forecastDownloadBlob(new Response('not an SVG'),'012.svgz'),/無效/)
+ t.mock.property(globalThis,'DecompressionStream',undefined)
+ await assert.rejects(data.forecastDownloadBlob(new Response(gzipSync(svg)),'012.svgz'),/改用 PNG/)
 })
 await test('Manifest fetch is public and rejects missing or malformed publication instead of falling back to a screenshot',async()=>{
  let options

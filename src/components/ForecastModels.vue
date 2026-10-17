@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { availableForecastFrames, forecastAssetUrl, forecastProducts, forecastRegions, forecastUtc, FORECAST_WORKFLOW, loadForecastManifest, type ForecastManifest, type ForecastProduct, type ForecastRegion } from '../data/forecast-models'
+import { availableForecastFrames, forecastAssetUrl, forecastDownloadBlob, forecastProducts, forecastRegions, forecastUtc, FORECAST_WORKFLOW, loadForecastManifest, type ForecastManifest, type ForecastProduct, type ForecastRegion } from '../data/forecast-models'
 const manifest = ref<ForecastManifest | null>(null), runId = ref(''), product = ref<ForecastProduct>('precip'), region = ref<ForecastRegion>('east-asia'), hour = ref(12)
 const loading = ref(false), error = ref(''), notice = ref(''), imageLoading = ref(true), imageError = ref(''), playing = ref(false), zoom = ref(1), enlarged = ref(false), saving = ref(false)
 const panel = ref<HTMLElement | null>(null), viewport = ref<HTMLElement | null>(null)
@@ -75,11 +75,11 @@ function moveDrag(event: PointerEvent) { if (drag && viewport.value) { viewport.
 async function download(path: string | undefined) {
   if (!path || saving.value) return
   saving.value = true; notice.value = ''
-  const filename = `WM6-${runId.value}-${region.value}-${product.value}-${path.split('/').pop()}`
+  const filename = `WM6-${runId.value}-${region.value}-${product.value}-${path.split('/').pop()}`.replace(/\.svgz$/, '.svg')
   try {
     const response = await fetch(forecastAssetUrl(path), { credentials: 'omit' })
     if (!response.ok) throw new Error(`下載失敗（HTTP ${response.status}），可開啟原圖後儲存。`)
-    const blob = await response.blob(), url = URL.createObjectURL(blob), a = document.createElement('a')
+    const blob = await forecastDownloadBlob(response, path), url = URL.createObjectURL(blob), a = document.createElement('a')
     a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
   } catch (cause) { notice.value = cause instanceof Error ? cause.message : '下載失敗，可開啟原圖儲存。' }
   finally { saving.value = false }

@@ -41,7 +41,7 @@ export function parseForecastManifest(value: unknown): ForecastManifest {
           if (file === undefined) continue
           if (!object(file)) throw new Error('無效的產品圖資。')
           const prefix = `runs/${run.id}/${region.id}/${product.id}/${String(frame.hour).padStart(3, '0')}`
-          pathMatches(file.png, prefix + '.png'); pathMatches(file.svg, prefix + '.svg')
+          pathMatches(file.png, prefix + '.png'); if (file.svg !== prefix + '.svgz') pathMatches(file.svg, prefix + '.svg')
           files[region.id]![product.id] = { png: file.png, svg: file.svg }
         }
       }
@@ -79,7 +79,19 @@ export async function loadForecastManifest(signal?: AbortSignal, fetcher: typeof
 }
 export function availableForecastFrames(run: ForecastRun | undefined, region: ForecastRegion, product: ForecastProduct): ForecastFrame[] { return run?.frames.filter(frame => frame.files[region]?.[product]) ?? [] }
 export function forecastAssetUrl(path: string): string {
-  if (!/^runs\/\d{8}T\d{4}Z\/(?:east-asia|west-pacific|north-america)\/(?:precip|wind|upper|temperature)\/(?:\d{3}\.(?:png|svg)|forecast\.gif|trend-\d{3}\.gif)$/.test(path)) throw new Error('不允許的圖資來源。')
+  if (!/^runs\/\d{8}T\d{4}Z\/(?:east-asia|west-pacific|north-america)\/(?:precip|wind|upper|temperature)\/(?:\d{3}\.(?:png|svgz?)|forecast\.gif|trend-\d{3}\.gif)$/.test(path)) throw new Error('不允許的圖資來源。')
   return FORECAST_BASE + path
+}
+export async function forecastDownloadBlob(response: Response, path: string): Promise<Blob> {
+  const blob = await response.blob()
+  if (!path.endsWith('.svgz')) return blob
+  const magic = new Uint8Array(await blob.slice(0, 2).arrayBuffer())
+  let text: string
+  if (magic[0] === 0x1f && magic[1] === 0x8b) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('此瀏覽器不支援 SVG 解壓縮，請改用 PNG。')
+    text = await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text()
+  } else text = await blob.text() // Some CDNs already decoded Content-Encoding: gzip.
+  if (!/<svg[\s>]/.test(text.slice(0, 2048))) throw new Error('SVG 圖資內容無效，請改用 PNG。')
+  return new Blob([text], { type: 'image/svg+xml;charset=utf-8' })
 }
 export function forecastUtc(value: string) { return value.replace('T', ' ').replace(/(?:\.000)?Z$/, ' UTC') }
