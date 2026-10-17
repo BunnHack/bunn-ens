@@ -12,6 +12,12 @@ The former Aircraft Recon navigation item now opens the internal `/#weather-tool
 
 Each card has a deep-linkable detail view (`/#weather-tools/{id}`), reference-data disclosure and working resource links. Existing WNC2/WM-6 tools remain available through the ensemble links. Unintegrated AIFS/GENC/EAGLE/observation products are not presented as live, and the recommended social account is not claimed as this project's official account. Thumbnail artwork and dates are from the user-supplied screenshot, not live forecasts. `tests/weather-tools.test.mjs` covers navigation, all six details, deep links, state preservation, assets and responsive CSS.
 
+### Basin ensemble screen
+
+`/#weather-tools/basin` opens a full-width three-column viewer: collapsible forecast/model navigation, central map and a control panel with initialization, light/color/dark themes, eleven regional views and CSV export. The initial WN3C view is the supplied 2026-10-16 06Z China-nearshore screenshot and explicitly **not live**; it is never reused for a different basin and CSV export is disabled for reference/unavailable models.
+
+Select **WN2C 全球洋區** to load the existing live WNC2 CSV API (FNV3P1). The new SVG chart plots individual `(sample, track_id)` paths, hollow MSLP-colored forecast points and global Natural Earth coastlines, with correct longitude wrapping and a strict 0–312h horizon. Genesis IDs remain sample-scoped. All themes and regional controls work on this chart. CSV export contains only the selected initialization's in-region 0–312h points. Latest refreshes every five minutes in visible tabs; manual run failure clears the previous map, and offline snapshots remain clearly labeled. ECMWF/AIFS/GEFS/AIGEFS/GENC entries display unavailable status rather than fabricated products. `tests/basin.test.mjs` covers controls, pressure classes, grouping, regional CSV export, run failure and empty maps.
+
 ## Local run and checks
 
 ```sh

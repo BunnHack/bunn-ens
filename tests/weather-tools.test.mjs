@@ -38,6 +38,13 @@ try {
   await test('Every details button has an internal detail view with honest data status and usable links', async () => {
     for (const tool of weatherTools) {
       await navigate(`#weather-tools/${tool.id}`)
+      if (tool.id === 'basin') {
+        assert.ok(document.querySelector('.basin-layout'))
+        assert.equal(document.querySelector('.basin-top h1').textContent, '洋區系集預報')
+        assert.match(document.querySelector('.basin-reference figcaption').textContent, /非即時/)
+        assert.equal(document.querySelector('.basin-top a').getAttribute('href'), '#weather-tools')
+        continue
+      }
       assert.equal(document.querySelector('.tool-detail h2').textContent, tool.title)
       assert.equal(document.querySelector('.tool-detail-copy p').textContent, tool.detail)
       assert.equal(document.querySelector('.tool-detail img').getAttribute('src'), tool.image)

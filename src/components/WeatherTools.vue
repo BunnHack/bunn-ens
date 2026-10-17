@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { weatherTools } from '../data/weather-tools'
+import BasinEnsemble from './BasinEnsemble.vue'
 
 const props = defineProps<{ toolId?: string }>()
 const selected = computed(() => weatherTools.find(tool => tool.id === props.toolId))
@@ -8,14 +9,15 @@ const selected = computed(() => weatherTools.find(tool => tool.id === props.tool
 
 <template>
   <div class="tools-surface" lang="zh-Hant">
-    <main id="weather-tools" class="tools-page">
-      <header class="tools-heading">
+    <main id="weather-tools" class="tools-page" :class="{ 'tools-page-basin': toolId === 'basin' }">
+      <header v-if="toolId !== 'basin'" class="tools-heading">
         <div><p class="tools-eyebrow">FORECASTS · OBSERVATIONS · COMMUNITY</p><h1 tabindex="-1">Weather Tools</h1><p>氣象工具與預報資源</p></div>
         <a class="tools-home" href="#main-content">返回風暴監測 <span aria-hidden="true">↗</span></a>
       </header>
-      <p class="tools-notice">依參考畫面整理的工具入口。縮圖與日期均來自參考截圖，並非即時預報或更新時間；產品接入情況請見詳細頁面。</p>
+      <p v-if="toolId !== 'basin'" class="tools-notice">依參考畫面整理的工具入口。縮圖與日期均來自參考截圖，並非即時預報或更新時間；產品接入情況請見詳細頁面。</p>
+      <BasinEnsemble v-if="toolId === 'basin'" />
 
-      <article v-if="selected" class="tool-detail" :aria-labelledby="`tool-${selected.id}`">
+      <article v-else-if="selected" class="tool-detail" :aria-labelledby="`tool-${selected.id}`">
         <a class="tools-back" href="#weather-tools">← 所有氣象工具</a>
         <div class="tool-detail-layout">
           <figure><img :src="selected.image" :alt="`${selected.title}參考截圖`" width="740" height="440" /><figcaption>參考畫面 · 非即時資料</figcaption></figure>
@@ -51,6 +53,7 @@ const selected = computed(() => weatherTools.find(tool => tool.id === props.tool
 <style scoped>
 .tools-surface { min-height: calc(100vh - 76px); background: #edf1f5; color: #526575; font-family: 'Roboto', 'Noto Sans TC', 'Microsoft JhengHei', sans-serif; }
 .tools-page { max-width: 1248px; padding: 30px 22px 0; }
+.tools-page.tools-page-basin { max-width: none; padding: 18px 20px 0; background: #f5f7fa; }
 .tools-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 .tools-eyebrow { font-size: 10px; letter-spacing: 1.8px; color: #899aaf; margin: 0 0 8px; }
 .tools-heading h1 { color: #415a70; font-size: 29px; letter-spacing: -.6px; font-weight: 500; }
