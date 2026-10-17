@@ -6,6 +6,12 @@ WM-6 uses WindBorne's Tropical Cyclone Tracker API. The short response lists cyc
 
 The page includes live WNC2 and **WM-6 Ensemble** forecast guidance.
 
+## Weather Tools
+
+The former Aircraft Recon navigation item now opens the internal `/#weather-tools` view. Its six cards follow the supplied reference: GIS系集預報, 洋區系集預報, 颱風攻擊機率, AIFS 風雨預報, 華南氣象愛好者 and 廣東省天氣實況. The responsive grid uses three columns on desktop, two on tablet and one on mobile, with cropped reference thumbnails, category badges, dates and outlined detail links.
+
+Each card has a deep-linkable detail view (`/#weather-tools/{id}`), reference-data disclosure and working resource links. Existing WNC2/WM-6 tools remain available through the ensemble links. Unintegrated AIFS/GENC/EAGLE/observation products are not presented as live, and the recommended social account is not claimed as this project's official account. Thumbnail artwork and dates are from the user-supplied screenshot, not live forecasts. `tests/weather-tools.test.mjs` covers navigation, all six details, deep links, state preservation, assets and responsive CSS.
+
 ## Local run and checks
 
 ```sh
@@ -20,7 +26,7 @@ Vite normally serves the local preview at `http://localhost:5173/`.
 
 ## Cloudflare Pages deployment
 
-This repository is configured for Cloudflare Pages **Direct Upload + Advanced Mode**:
+The Pages project uses **Advanced Mode** with a GitHub source connection to `BunnHack/bunn-ens` (`main`), build command `npm run build` and output directory `dist`. It was initially created using Direct Upload.
 
 - `public/_worker.js` is copied into `dist/_worker.js` and routes `/api/wnc2` and `/api/wm6` while serving static assets through `env.ASSETS.fetch()`.
 - `GET /api/wnc2?model=FNV3P1&cycle=latest` discovers the latest published six-hour run in the previous 72 hours, probes 00/06/12/18Z in descending order, fetches the fixed Google DeepMind WeatherNext source, validates the CSV, and returns JSON metadata plus CSV.
@@ -31,7 +37,7 @@ This repository is configured for Cloudflare Pages **Direct Upload + Advanced Mo
 
 ### Deploy using the Cloudflare dashboard/API
 
-Cloudflare’s official Pages Direct Upload docs state that Direct Upload cannot later be switched to Git integration. The deployment output is `dist`; build command is `npm run build`.
+The GitHub source was connected using the Pages source API. Verify the GitHub App authorization and actual build/deployment status after a push; a saved source configuration alone is not proof of a successful automatic deployment. Direct Upload via the authenticated API remains available as a fallback without removing the Git connection. The deployment output is `dist`; build command is `npm run build`.
 
 **Live site:** https://tropical-tidbits-material.pages.dev/
 

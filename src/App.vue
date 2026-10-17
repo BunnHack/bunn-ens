@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import WeatherTools from './components/WeatherTools.vue'
 import Wnc2Ensemble from './components/Wnc2Ensemble.vue'
 import Wm6Ensemble from './components/Wm6Ensemble.vue'
 
@@ -15,7 +16,7 @@ type ImagePreview = { title: string; image: string; description: string }
 
 const navigation = [
   { label: 'Current Storms', href: 'https://www.tropicaltidbits.com/storminfo/' },
-  { label: 'Aircraft Recon', href: 'https://www.tropicaltidbits.com/recon/' },
+  { label: 'Weather Tools', href: '#weather-tools' },
   { label: 'Satellite Imagery', href: 'https://www.tropicaltidbits.com/sat/' },
   { label: 'Forecast Models', href: 'https://www.tropicaltidbits.com/analysis/models/' },
   { label: 'Analysis Tools', href: 'https://www.tropicaltidbits.com/analysis/' },
@@ -64,7 +65,21 @@ function closeDialogs() {
   settingsOpen.value = false
   acronymsOpen.value = false
 }
-onBeforeUnmount(() => clearTimeout(snackbarTimer))
+const currentHash = ref(window.location.hash)
+const weatherToolsOpen = computed(() => /^#weather-tools(?:\/|$)/.test(currentHash.value))
+const weatherToolId = computed(() => currentHash.value.startsWith('#weather-tools/') ? currentHash.value.slice('#weather-tools/'.length) : undefined)
+async function onHashChange() {
+  currentHash.value = window.location.hash
+  closeDialogs()
+  await nextTick()
+  if (weatherToolsOpen.value) {
+    const heading = document.querySelector<HTMLElement>('#weather-tools h1')
+    heading?.focus({ preventScroll: true })
+    document.querySelector('#weather-tools')?.scrollIntoView?.({ block: 'start' })
+  } else if (currentHash.value === '#models-title') document.querySelector('#models-title')?.scrollIntoView?.({ block: 'start' })
+}
+onMounted(() => window.addEventListener('hashchange', onHashChange))
+onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener('hashchange', onHashChange) })
 </script>
 
 <template>
@@ -76,13 +91,15 @@ onBeforeUnmount(() => clearTimeout(snackbarTimer))
       </a>
       <nav class="main-navigation" aria-label="Main navigation">
         <template v-for="(item, index) in navigation" :key="item.label">
-          <a v-if="index === 0" class="nav-link current" href="#main-content" aria-current="page">{{ item.label }}</a>
+          <a v-if="index === 0" class="nav-link" :class="{ current: !weatherToolsOpen }" href="#main-content" :aria-current="!weatherToolsOpen ? 'page' : undefined">{{ item.label }}</a>
+          <a v-else-if="index === 1" class="nav-link" :class="{ current: weatherToolsOpen }" :href="item.href" :aria-current="weatherToolsOpen ? 'page' : undefined">{{ item.label }}</a>
           <a v-else class="nav-link" :href="item.href" target="_blank" rel="noopener noreferrer" :aria-label="`${item.label} — open original website in new tab`">{{ item.label }}</a>
         </template>
       </nav>
     </header>
 
-    <main id="main-content">
+    <WeatherTools v-if="weatherToolsOpen" :tool-id="weatherToolId" />
+    <main v-show="!weatherToolsOpen" id="main-content">
       <section class="page-title-row">
         <div>
           <p class="eyebrow">TROPICAL CYCLONE MONITORING</p>
