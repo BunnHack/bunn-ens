@@ -16,3 +16,5 @@ dist/
 __pycache__/
 *.pyc
 .generated-tracks/
+.generated-ensembles/
+.ncep-grid-cache/
