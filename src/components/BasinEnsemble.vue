@@ -8,7 +8,7 @@ import Wm6DataAudit from './Wm6DataAudit.vue'
 import ChartFrame from './ChartFrame.vue'
 import { focusedProbabilityRegion, passageField, type ProbabilityField } from '../data/probability'
 
-const props = withDefaults(defineProps<{ mode?: 'basin' | 'typhoon' }>(), { mode: 'basin' })
+const props = withDefaults(defineProps<{ mode?: 'basin' | 'typhoon'; active?: boolean }>(), { mode: 'basin', active: true })
 const sections = ['主要模式預報', '主要模式誤差', '防御參考', '海洋預報', '1000-Member 產品']
 const model = ref(props.mode === 'typhoon' ? 'wn2' : 'wn3')
 const theme = ref<MapTheme>('light')
@@ -24,7 +24,7 @@ const result = ref<PotentialResult | null>(null)
 const loading = ref(false)
 const error = ref('')
 const showInfo = ref(false)
-const supported = computed(() => ['wn3', 'wn2', 'wm6'].includes(model.value))
+const supported = computed(() => ['wn3', 'wn2', 'wm6', 'genc'].includes(model.value))
 const title = computed(() => props.mode === 'basin' ? '洋區系集預報' : '台風潛勢預報')
 const region = computed(() => basinRegions.find(item => item.id === regionId.value)!)
 const selectedModel = computed(() => potentialModels.find(item => item.id === model.value)!)
@@ -75,7 +75,7 @@ function chooseModel(id: string) { model.value = id; runChoice.value = 'latest';
 function navigateMode(event: Event, mode: 'basin' | 'typhoon') { if (props.mode !== mode) { event.preventDefault(); window.location.hash = '#weather-tools/' + mode } }
 async function refresh() {
   controller?.abort(); result.value = null; error.value = ''; loading.value = false
-  if (!supported.value) return
+  if (!supported.value || !props.active) return
   const active = new AbortController(); controller = active; loading.value = true
   try {
     const data = await loadPotential(model.value as PotentialModel, runChoice.value, active.signal, fetch, { includeUnofficial: includeUnofficial.value })
@@ -91,15 +91,16 @@ function downloadCsv() {
   const url = URL.createObjectURL(new Blob([basinCsv(visiblePoints.value)], { type: 'text/csv;charset=utf-8' }))
   const anchor = document.createElement('a'); anchor.href = url
   const init = result.value.catalog.initTime
-  anchor.download = (model.value === 'wn2' ? 'WNC2' : model.value === 'wn3' ? 'WNC3' : 'WM-6') + '-' + (props.mode === 'typhoon' ? selectedStorm.value.replace(/:/g, '-') : regionId.value) + '-' + init.slice(0, 10) + '-' + init.slice(11, 13) + 'z-0-312h.csv'
+  anchor.download = (model.value === 'genc' ? 'GENC' : model.value === 'wn2' ? 'WNC2' : model.value === 'wn3' ? 'WNC3' : 'WM-6') + '-' + (props.mode === 'typhoon' ? selectedStorm.value.replace(/:/g, '-') : regionId.value) + '-' + init.slice(0, 10) + '-' + init.slice(11, 13) + 'z-0-312h.csv'
   anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-function onVisibility() { if (document.visibilityState === 'visible' && runChoice.value === 'latest' && !loading.value) refresh() }
+function onVisibility() { if (props.active && document.visibilityState === 'visible' && runChoice.value === 'latest' && !loading.value) refresh() }
 watch([model, runChoice], refresh)
 watch(() => props.mode, () => { forecastType.value = 'ensemble' })
+watch(() => props.active, active => { if (!active) { controller?.abort(); loading.value=false } else if (!result.value) refresh() })
 onMounted(() => {
   refresh()
-  timer = setInterval(() => { if (runChoice.value === 'latest' && document.visibilityState !== 'hidden' && !loading.value) refresh() }, REFRESH_MS)
+  timer = setInterval(() => { if (props.active && runChoice.value === 'latest' && document.visibilityState !== 'hidden' && !loading.value) refresh() }, REFRESH_MS)
   document.addEventListener('visibilitychange', onVisibility)
 })
 onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) })
@@ -111,7 +112,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
     <div class="basin-layout">
       <aside class="basin-sidebar basin-panel" aria-label="台風預報模式選單">
         <h2>台風預報</h2>
-        <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ section }}</summary><p>此分類產品尚未接入。</p></details>
+        <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ section }}</summary><template v-if="section === '主要模式預報'"><p><a href="#weather-tools/overview">預報洋區總覽 →</a></p><p><a href="#weather-tools/extended">中遠期襲擊潛勢 →</a></p><p><a href="#forecast-models">WM-6 全球格點預報 →</a></p></template><p v-else>此分類產品尚未接入。</p></details>
         <details v-for="group in (['basin', 'typhoon'] as const)" :key="group" :open="mode === group" class="basin-section" :class="{ 'basin-model-list': mode === group }">
           <summary @click="navigateMode($event, group)">{{ group === 'basin' ? '洋區潛勢預報' : '台風潛勢預報' }}</summary>
           <template v-if="mode === group"><button v-for="item in potentialModels" :key="item.id" :class="{ active: model === item.id }" :aria-pressed="model === item.id" @click="chooseModel(item.id)">{{ item.label }} {{ group === 'basin' ? '全球洋區' : '台風襲擊潛勢' }}<small>{{ item.status }}</small></button></template>
@@ -126,7 +127,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
         <div v-else-if="mode === 'typhoon' && ['sst', 'heat'].includes(forecastType)" class="basin-empty"><h2>{{ products.find(item => item.id === forecastType)?.label }} 尚未接入</h2><p>目前資料源不含海溫或海洋熱焓場，不以風速或氣壓替代。</p><button @click="forecastType = 'ensemble'">返回系集預報</button></div>
         <div v-else-if="forecastType === 'probability' && probability.error" class="basin-empty probability-unavailable" role="status"><h2>此路徑不能計算系集機率</h2><p>{{ probability.error }}</p><button @click="forecastType = 'ensemble'">返回系集預報</button></div>
         <template v-else-if="result && plotted">
-          <ChartFrame :filename="chartFilename" :title="`${selectedModel.label} ${selectedStorm || region.label} 預報圖`"><BasinPlot v-if="chartCatalog" :catalog="chartCatalog" :region="probability.field?.region ?? mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon' && forecastType === 'ensemble'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="plottedMean" :mean-label="meanLabel" :time-anchor="result.wm6?.forecastZero ?? ''" :probability="probability.field ?? undefined" /></ChartFrame>
+          <ChartFrame v-if="active" :filename="chartFilename" :title="`${selectedModel.label} ${selectedStorm || region.label} 預報圖`"><BasinPlot v-if="chartCatalog" :catalog="chartCatalog" :region="probability.field?.region ?? mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon' && forecastType === 'ensemble'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="plottedMean" :mean-label="meanLabel" :time-anchor="result.wm6?.forecastZero ?? ''" :probability="probability.field ?? undefined" /></ChartFrame>
           <p v-if="probability.field" class="basin-data-note probability-method">本站計算的 120 km 通過比例，非官方襲擊／登陸／損害機率。時窗 0–{{ probabilityLead }}h；分母為完整系集 {{ probability.field.denominator }} 個成員，當前時窗有 {{ probability.field.trackedMembers }} 個成員追蹤到此氣旋，每個成員每個位置最多計一次。{{ model === 'wm6' ? '分母使用供應商 ens_size。' : '分母取整份全球 CSV 出現的成員數，不按氣旋／時窗縮減；若來源缺漏整個成員，比例可能偏高。' }}以球面短弧內插連續路徑，超過 12 小時缺口不連接；未追蹤／缺失成員不計命中，並不代表無風險。等值線網格約 {{ probability.field.step.toFixed(2) }}°，不是供應商 cone；城市標籤指市中心點 120 km 內，不是全縣市覆蓋率。預設圖域聚焦 ≥5% 通過區，可切換完整成員圖域。</p>
           <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ result.source === 'snapshot' ? '離線快照 · 未確認為最新資料' : model === 'wm6' ? '已連接 WM-6 真實成員路徑' : '已連接 WeatherNext CSV' }} · {{ currentTime }} · {{ visiblePoints.length }} 個預報點 · 0–{{ forecastType === 'probability' ? probabilityLead : 312 }}h</p>
           <p v-if="result.wm6" class="basin-data-note wm6-track-counts">本次上游：{{ result.wm6.matchedCount }} 個匹配氣旋、{{ result.wm6.unmatchedCount }} 條未匹配成員路徑。當前圖中：{{ wm6Counts.matched }} 個匹配氣旋、{{ wm6Counts.unmatched }} 條未匹配路徑。{{ includeUnofficial ? '未匹配路徑是單一成員的生成候選，不代表同樣數目的獨立風暴，也不保證成颱；未自動併入命名氣旋。' : '未匹配路徑已隱藏。' }} 時效基準：{{ result.wm6.forecastZero }}。</p>

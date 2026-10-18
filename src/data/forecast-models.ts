@@ -77,6 +77,10 @@ export async function loadForecastManifest(signal?: AbortSignal, fetcher: typeof
   if (text.length > 1024 * 1024) throw new Error('圖資索引過大。')
   return parseForecastManifest(JSON.parse(text))
 }
+export function publishedForecastBases(runs: ForecastRun[]): ForecastRun[] {
+  const seen = new Set<number>()
+  return [...runs].sort((a,b) => Date.parse(b.forecastZero) - Date.parse(a.forecastZero) || Date.parse(b.initializationTime) - Date.parse(a.initializationTime)).filter(run => { const base = Date.parse(run.forecastZero); if (seen.has(base)) return false; seen.add(base); return true })
+}
 export function availableForecastFrames(run: ForecastRun | undefined, region: ForecastRegion, product: ForecastProduct): ForecastFrame[] { return run?.frames.filter(frame => frame.files[region]?.[product]) ?? [] }
 export function forecastAssetUrl(path: string): string {
   if (!/^runs\/\d{8}T\d{4}Z\/(?:east-asia|west-pacific|north-america)\/(?:precip|wind|upper|temperature)\/(?:\d{3}\.(?:png|svgz?)|forecast\.gif|trend-\d{3}\.gif)$/.test(path)) throw new Error('不允許的圖資來源。')

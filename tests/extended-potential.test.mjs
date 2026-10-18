@@ -74,6 +74,7 @@ await test('New workspace shows real 120–312h tracks, one peak per member, Eng
   assert.equal(document.querySelector('h1').textContent,'中遠期襲擊潛勢');assert.equal(document.querySelector('[aria-label="Potential start hour"]').value,'120')
   assert.match(document.querySelector('.ep-provenance').textContent,/2026-10-16 18:00:00 UTC/)
   assert.match(document.querySelector('.ep-method').textContent,/比例偏高/);assert.match(document.querySelector('.ep-method').textContent,/比例偏低/)
+  assert.ok(document.querySelectorAll('.potential-mean line').length>0);assert.equal(document.querySelector('.ep-navigation'),null);assert.equal(document.querySelector('[aria-label="Focus candidate mean"]').checked,true);await click('.ep-storm-tabs button','全部');
   assert.equal(document.querySelectorAll('.potential-member-peaks > text').length,2)
   assert.equal(document.querySelectorAll('.potential-mean line').length,0);assert.equal(document.querySelector('.potential-mean-legend-line'),null)
   assert.ok(document.querySelectorAll('.potential-lead-labels text').length>0)
@@ -93,8 +94,8 @@ await test('WM-6 includes real unmatched tracks but cannot give one candidate 10
  t.mock.method(globalThis,'fetch',fixtureFetch)
  const app=createApp(Panel);app.mount('#app');await settle()
  try{
-  await set('[aria-label="Potential model"]','wm6');assert.equal(document.querySelectorAll('.potential-member-peaks > text').length,3)
-  assert.match(document.querySelector('.ep-provenance').textContent,/2026-10-22 00:00:00 UTC/)
+  await set('[aria-label="Potential model"]','wm6');await click('.ep-storm-tabs button','全部');assert.equal(document.querySelectorAll('.potential-member-peaks > text').length,3)
+  assert.match(document.querySelector('.ep-method').textContent,/2026-10-22 00:00:00 UTC/)
   assert.match(document.querySelector('.basin-track-lines').textContent,/56\.9 kt · 949\.8 hPa/)
   await click('.ep-product-tabs button','機率預報');assert.match(document.querySelector('svg').textContent,/N=128/)
   await set('[aria-label="Potential cyclone"]',genesis);assert.equal(document.querySelector('svg'),null);assert.match(document.querySelector('.ep-warning').textContent,/單成員生成候選/)

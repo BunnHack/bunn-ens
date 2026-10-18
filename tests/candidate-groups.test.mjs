@@ -58,7 +58,7 @@ await test('Candidate UI selects a local system, preserves original CSV IDs, exp
  try{
   assert.equal(document.querySelectorAll('.ep-group-button').length,1);document.querySelector('.ep-group-button').click();await settle()
   assert.match(document.querySelector('svg > title').textContent,/本站 G1/);assert.match(document.querySelector('svg > desc').textContent,/not provider storm identity/);assert.match(document.querySelector('.ep-group-members').textContent,/sample\/member=0/)
-  assert.ok(document.querySelectorAll('.potential-mean line').length>0);assert.match(document.querySelector('.ep-counts').textContent,/8 成員；不按圖域縮小/)
+  assert.ok(document.querySelectorAll('.potential-mean line').length>0);assert.match(document.querySelector('.ep-counts').textContent,/完整分母 8；不按群組或圖域縮小/)
   const svg=serializeChart(document.querySelector('svg'));assert.match(svg,/local geometric association/);assert.match(svg,/700/)
   document.querySelector('.ep-download').click();await settle();const output=await exported.text();assert.match(output,/700/);assert.match(output,/949.8/);assert.ok(!output.includes('local:'));assert.ok(!output.includes('WP292026'))
   const probability=[...document.querySelectorAll('.ep-product-tabs button')].find(button=>button.textContent.includes('機率'));probability.click();await settle()

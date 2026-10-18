@@ -8,13 +8,16 @@ import { passageField } from '../data/probability'
 import { potentialDenominator, rangePresets, windowCatalog, windowValidTimes } from '../data/extended-potential'
 import type { Catalog } from '../data/wnc2'
 import { associationRules, candidateGroups, candidateMean } from '../data/candidate-groups'
+import { focusTrackRegion } from '../data/overview'
 import { clearRequestCache } from '../data/request-cache'
 
-withDefaults(defineProps<{ active?: boolean }>(), { active: true })
-const models = potentialModels.filter(item => ['wn2','wn3','wm6'].includes(item.id)).map(item => ({ ...item, id: item.id as PotentialModel, source: item.id === 'wm6' ? 'WindBorne WM-6 API' : `Google Weather Lab · ${item.id === 'wn3' ? 'WNV3' : 'FNV3P1'}` }))
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
+const models = potentialModels.filter(item => ['wn2','wn3','wm6','genc'].includes(item.id)).map(item => ({ ...item, id: item.id as PotentialModel, source: item.id === 'wm6' ? 'WindBorne WM-6 API' : `Google Weather Lab · ${item.id === 'genc' ? 'OPER' : item.id === 'wn3' ? 'WNV3' : 'FNV3P1'}` }))
 const model = ref<PotentialModel>('wn2'), run = ref('latest'), storm = ref('all')
 const start = ref(120), end = ref(312), product = ref<'ensemble' | 'probability'>('ensemble')
-const theme = ref<MapTheme>('light'), showInfo = ref(true), showHours = ref(true), groupCandidates = ref(true)
+const theme = ref<MapTheme>('light'), showInfo = ref(false), showHours = ref(true), groupCandidates = ref(true)
+const focusStorm = ref(true)
+let autoSelectPending = true
 const regions: BasinRegion[] = [{ id: 'extended-wp', label: '西太平洋／跨日期線', west: 100, east: 190, south: 0, north: 50 }, ...basinRegions]
 const regionId = ref('extended-wp')
 const region = computed(() => regions.find(item => item.id === regionId.value) ?? regions[0]!)
@@ -34,22 +37,23 @@ const groupChoices = computed(() => choices.value.filter(option => option.kind =
 const selectedChoice = computed(() => allChoices.value.find(item => item.key === storm.value))
 const fullCatalog = computed<Catalog | null>(() => !result.value ? null : storm.value === 'all' ? result.value.catalog : selectedGroup.value ? { ...result.value.catalog, points: selectedGroup.value.points } : cycloneCatalog(result.value, storm.value))
 const catalog = computed(() => fullCatalog.value ? windowCatalog(fullCatalog.value, start.value, end.value) : null)
-const visible = computed(() => catalog.value?.points.filter(point => pointInRegion(point, region.value)) ?? [])
+const visible = computed(() => catalog.value?.points.filter(point => pointInRegion(point, mapRegion.value)) ?? [])
 const trackCount = computed(() => new Set(visible.value.map(point => `${point.sample}:${point.trackId}`)).size)
 const memberCount = computed(() => new Set(visible.value.map(point => point.sample)).size)
 const mean = computed(() => (!result.value || storm.value === 'all' ? [] : selectedGroup.value ? candidateMean(selectedGroup.value) : selectedChoice.value?.kind === 'matched' ? cycloneMean(result.value, storm.value) : []).filter(point => point.leadHours >= start.value && point.leadHours <= end.value))
 const meanLabel = computed(() => selectedGroup.value ? 'Local group mean' : storm.value === 'all' ? 'No cross-storm mean' : selectedChoice.value?.kind !== 'matched' ? 'Single-member candidate' : model.value === 'wm6' ? 'Provider mean' : 'Ensemble mean (≥25%)')
+const mapRegion = computed(() => focusStorm.value && storm.value !== 'all' && catalog.value ? focusTrackRegion(mean.value.length ? mean.value : catalog.value.points, region.value) : region.value)
 const denominator = computed(() => { try { return result.value ? potentialDenominator(result.value, selectedGroup.value ? 'all' : storm.value) : null } catch { return null } })
 const probability = computed(() => {
   if (product.value !== 'probability' || !result.value || !fullCatalog.value) return { field: undefined, error: '' }
   try {
     const size = potentialDenominator(result.value, selectedGroup.value ? 'all' : storm.value)
     if (!catalog.value?.points.length) throw new Error('此時窗沒有可用路徑，不能解讀為零風險。')
-    return { field: passageField(fullCatalog.value, region.value, size, 120, end.value, { minLead: start.value, allSystems: storm.value === 'all' || !!selectedGroup.value }), error: '' }
+    return { field: passageField(fullCatalog.value, mapRegion.value, size, 120, end.value, { minLead: start.value, allSystems: storm.value === 'all' || !!selectedGroup.value }), error: '' }
   } catch (cause) { return { field: undefined, error: cause instanceof Error ? cause.message : String(cause) } }
 })
 const validTimes = computed(() => { try { return result.value ? windowValidTimes(result.value, start.value, end.value) : [] } catch { return [] } })
-const filename = computed(() => `${model.value}-${result.value?.catalog.initTime.replace(/[^0-9]/g, '') ?? 'loading'}-${storm.value.replace(/[^\w-]/g, '_')}-${product.value}-${regionId.value}-${start.value}-${end.value}h`)
+const filename = computed(() => `${model.value}-${result.value?.catalog.initTime.replace(/[^0-9]/g, '') ?? 'loading'}-${storm.value.replace(/[^\w-]/g, '_')}-${product.value}-${regionId.value}-${focusStorm.value ? 'focus-' : ''}${start.value}-${end.value}h`)
 const queryRuns = computed(() => {
   const values = new Map<string,string>(), loaded = result.value?.catalog.initTime
   if (loaded) values.set(`${loaded.slice(0,10)}|${loaded.slice(11,13)}z`, loaded+' UTC · 已載入')
@@ -70,7 +74,8 @@ function changeEnd(event: Event) { end.value = Math.max(Number((event.target as 
 async function refresh() {
   const token = ++revision; controller?.abort(); controller = new AbortController()
   const signal = controller.signal
-  result.value = null; loading.value = true; error.value = ''
+  autoSelectPending = true; result.value = null; loading.value = true; error.value = ''
+  if (!props.active) { loading.value=false; return }
   try {
     const loaded = await loadPotential(model.value, run.value, signal, undefined, { includeUnofficial: true })
     if (!signal.aborted && token === revision) result.value = loaded
@@ -84,101 +89,55 @@ function downloadCsv() {
   const link = document.createElement('a'); link.href = url; link.download = `${filename.value}.csv`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 watch([model, run], refresh, { immediate: true })
-watch(choices, options => { if (result.value && storm.value !== 'all' && !options.some(option => option.key === storm.value)) storm.value = 'all' })
+watch(choices, options => {
+  if (!result.value) return
+  if (autoSelectPending) {
+    autoSelectPending=false
+    const group=[...clustering.value.groups].filter(g=>options.some(o=>o.key===g.key)&&candidateMean(g).filter(p=>p.leadHours>=start.value&&p.leadHours<=end.value).length>=2).sort((a,b)=>b.members-a.members)[0]
+    storm.value=group?.key??options.find(o=>o.kind==='matched')?.key??'all'
+  } else if (storm.value!=='all'&&!options.some(option=>option.key===storm.value)) storm.value='all'
+})
+watch(() => props.active, active => { if (!active) { ++revision; controller?.abort(); loading.value=false } else if (!result.value) refresh() })
 onBeforeUnmount(() => { ++revision; controller?.abort() })
 </script>
 
 <template>
   <section class="extended-potential">
-    <header class="ep-heading"><div><h1 tabindex="-1">{{ title }}</h1><p>真實系集路徑 · {{ windowLabel }} · 本站 120 km 通過比例，非官方襲擊／登陸機率</p></div><a href="#weather-tools">← Weather Tools</a></header>
+    <header class="ep-heading"><h1>{{ title }}</h1><span>{{ modelInfo.label }} · {{ windowLabel }}</span></header>
     <div class="ep-layout">
-      <aside class="ep-navigation" aria-label="潛勢導覽">
-        <details><summary>主要模式預報</summary><a href="#forecast-models">WM-6 全球格點預報 ↗</a></details>
-        <details open><summary>熱帶氣旋預報</summary><div class="ep-model-list"><section v-for="item in models" :key="item.id"><h2>{{ item.label }}</h2><button v-for="preset in rangePresets" :key="preset.id" :class="{ selected: model === item.id && start === preset.start && end === preset.end }" :aria-pressed="model === item.id && start === preset.start && end === preset.end" @click="choose(item.id, preset)">{{ preset.label }} <small>{{ preset.start }}–{{ preset.end }}h</small></button></section><p>ECMWF 官方襲擊率、風圈／海溫／熱含量未接入，不以參考圖片代替。</p></div></details>
-        <details><summary>系集與資料說明</summary><p>保留每個 sample／track ID。本站 G 是可關閉的幾何候選分群，不是供應商或官方系統編號；每群每成員最多一條路徑，模糊配對不硬併。全部獨立路徑仍無跨風暴平均。</p><a href="#weather-tools/basin">洋區系集預報</a><a href="#weather-tools/typhoon">單一氣旋詳細分析</a></details>
-      </aside>
       <section class="ep-workspace" aria-label="中遠期預報圖">
-        <div class="ep-chart-heading"><strong>{{ modelInfo.label }} · {{ windowLabel }}</strong><span>{{ product === 'ensemble' ? '系集預報' : '本站機率預報' }}</span></div>
-        <div class="ep-storm-tabs" aria-label="氣旋選擇"><button :class="{ selected: storm === 'all' }" :aria-pressed="storm === 'all'" @click="storm = 'all'">全部獨立路徑</button><button v-for="option in matchedChoices" :key="option.key" :class="{ selected: storm === option.key }" :aria-pressed="storm === option.key" @click="storm = option.key">{{ option.label }}</button><button v-for="option in groupChoices" :key="option.key" class="ep-group-button" :class="{ selected: storm === option.key }" :aria-pressed="storm === option.key" @click="storm = option.key">{{ option.label }}</button></div>
-        <p v-if="groupCandidates && result" class="ep-status ep-cluster-note">{{ clustering.note || `本圖域／時窗有 ${groupChoices.length} 個本站候選群組，點選 G 按鈕只看該群。原始路徑不被改名或刪除；至少 ${clustering.minimumMembers} 個不同成員才成群。` }} 分群不是正式氣旋身分或生成機率；不同 G 也可能只是同一未來系統的不同情境，不把群數當風暴數。G 號僅屬所選模型／版本，不跨模型對號，遠期可能誤分／漏分。</p>
-        <details v-if="selectedGroup" class="ep-group-members ep-status"><summary>{{ selectedGroup.label }} · 原始成員與 ID（群組支持度非生成機率）</summary><p>群組均線是入群成員條件平均，不代表全體系集已同意有一個共同風暴。</p><ul><li v-for="track in selectedGroup.tracks" :key="`${track.sample}:${track.trackId}`">sample/member={{ track.sample }} · {{ track.trackId }}</li></ul></details>
-        <p v-if="loading" class="ep-status" role="status">正在載入並固定 {{ modelInfo.label }} 初始化；不沿用其他模型或時次圖…</p>
+        <p v-if="loading" class="ep-status" role="status">正在載入 {{ modelInfo.label }} 真實路徑…</p>
         <p v-if="error" class="ep-status ep-error" role="alert">{{ error }} <button @click="reload">重試</button></p>
-        <p v-if="result?.warning" class="ep-status ep-warning" role="status">資料狀態：{{ result.warning }}</p>
-        <p v-if="result?.source === 'snapshot'" class="ep-status ep-warning">目前為有日期的本地備份，不是已確認的最新模式；請核對下方初始化與有效日期。</p>
-        <p v-if="probability.error" class="ep-status ep-warning" role="status">{{ probability.error }} 不以空白或 100% 圖替代。</p>
-        <template v-if="result && catalog && active && !probability.error"><ChartFrame :filename="filename" :title="`${modelInfo.label} ${title} ${windowLabel}`"><BasinPlot :catalog="catalog" :region="region" :theme="theme" :model-label="modelInfo.label" :wind-mode="product === 'ensemble'" :storm="storm === 'all' ? 'All independent tracks' : selectedChoice?.label ?? storm" :mean="mean" :mean-label="meanLabel" :association="association" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product === 'ensemble' && showHours" :time-anchor="result.wm6?.forecastZero ?? ''" /></ChartFrame></template>
-        <div v-else-if="!loading && !error && !probability.error" class="ep-empty">尚無可用圖資。</div>
-        <div v-if="result" class="ep-provenance"><p>{{ result.wm6 ? 'Provider run（供應商版本）' : 'Model init' }}：<strong>{{ result.catalog.initTime }} UTC</strong><br v-if="result.wm6" /><span v-if="result.wm6">Forecast zero：{{ result.wm6.forecastZero }}（有效時間從此加算）</span></p><p v-if="validTimes.length">有效時間窗：{{ utc(validTimes[0]!) }} → {{ utc(validTimes[1]!) }}</p><p>{{ modelInfo.source }} · {{ result.source === 'remote' ? '供應商資料（核對所示版本與預報基準，非保證最新）' : '明確標示的備份' }} · 查詢完成：{{ result.checkedAt }}（非模型起報時間）</p></div>
-        <section v-if="showInfo" class="ep-method"><h2>圖表說明</h2>
-          <p>本頁近程定義 0–120h、中遠期 120–312h（第 5–13 天）。參考圖較長時效不代表本站有資料：本頁不補造 +312h 以後的點。數字時效標籤以 24h 間隔抽樣；右側為此時窗觸及圖域的每個成員原始風速峰值（kt）。</p>
-          <p>機率是選定時間窗內，路徑距某點 120 km 內的成員比例。全系統計算同一成員任一獨立氣旋通過；選本站 G 時只計該群，分母仍是完整系集，不是群組人數。每成員最多計一次，不連接不同 track ID；依球面最短弧裁切兩端時窗，不跨越大於 12h 缺口。</p>
-          <p>本站分群只關聯未匹配候選、不改官方 ID。首個保留路徑點的時效差 ≤{{ associationRules.startLagHours }}h（不是官方生成時間）；共同早期 {{ associationRules.comparisonHours }}h 內至少重疊 {{ associationRules.overlapHours }}h，以球面距離中位數 ≤{{ associationRules.medianKm }}km、80 分位 ≤{{ associationRules.p80Km }}km 配對。每條都必須直接符合中心參考路徑，不以無限制鏈結串成大群；同成員兩條同樣接近（差 &lt;{{ associationRules.ambiguityKm }}km）時不硬選。至少 3 位且達本批已辨識成員 5% 才成群。幾何相似不能證實共同風暴，可能分裂／混合不同未來系統。</p>
-          <p>分母採 WM-6 供應商 ens_size，或 WeatherNext 完整 CSV 的成員數，不以畫面剩餘路徑數當分母。CSV 完全省略的成員無法恢復，可能使分母偏小、比例偏高；缺失或未追蹤到的路徑則可能使比例偏低。沒有路徑不代表安全。低於 5% 不畫等值線；城市徽章是市中心點，非縣市面積或受災率。</p>
-          <p>原始 max_wind_kt／min_mslp_hpa 不由氣壓換算或放大。已匹配風暴沿用實際均線；本站 G 均線是入群成員的條件平均，逐時至少 3 位且達群組成員 25%，並非供應商平均／全系集共識；全部路徑仍不做跨風暴均線。地名為英文簡寫，Natural Earth 1:50m 僅為簡化海岸與國界。非官方警報、襲擊率或校準風險。</p>
-        </section>
+        <p v-if="result?.warning" class="ep-status ep-warning">{{ result.warning }}</p>
+        <p v-if="result?.source==='snapshot'" class="ep-status ep-warning">有日期的本地備份，未確認最新。</p>
+        <p v-if="probability.error" class="ep-status ep-warning">{{ probability.error }} 不以空白或100%代替。</p>
+        <ChartFrame v-if="result&&catalog&&active&&!probability.error" :filename="filename" :title="`${modelInfo.label} ${title} ${windowLabel}`"><BasinPlot :catalog="catalog" :region="mapRegion" :theme="theme" :model-label="modelInfo.label" :wind-mode="product==='ensemble'" :storm="storm==='all'?'All independent tracks':selectedChoice?.label??storm" :mean="mean" :mean-label="meanLabel" :association="association" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product==='ensemble'&&showHours" :time-anchor="result.wm6?.forecastZero??''"/></ChartFrame>
+        <p v-if="result" class="ep-provenance">{{ result.wm6?'供應商版本':'模型起報' }} {{ result.catalog.initTime }} UTC<span v-if="result.wm6"> · 預報基準 {{ result.wm6.forecastZero }}</span><span v-if="focusStorm&&storm!=='all'"> · 已聚焦系統均線，外圍成員可能超出圖域。</span></p>
+        <p v-if="selectedGroup" class="ep-cluster-note">本站 G 為非官方幾何分群；均線只代表入群成員的條件平均，不是全系集共識。</p>
+        <details class="ep-method" :open="showInfo"><summary>來源、分群及機率計算說明</summary>
+          <div class="ep-counts" v-if="result"><p>圖域／時窗：{{ trackCount }} 路徑 · {{ memberCount }} 成員 · {{ visible.length }} 點。完整分母 {{ denominator??'不可用' }}；不按群組或圖域縮小。全球資料 {{ result.catalog.points.length }} 點、{{ result.catalog.totalSamples }} 已辨識成員。</p></div>
+          <p v-if="validTimes.length">有效時間窗：{{ utc(validTimes[0]!) }} → {{ utc(validTimes[1]!) }}</p>
+          <p class="ep-cluster-note">{{ clustering.note }} 本站 G 僅屬該模型／版本；不同 G 也可能只是同一未來系統的不同情境，不把群數當風暴數。可在進階選項關閉分群並查看原始獨立路徑。</p>
+          <p>分群首個保留點時差≤{{ associationRules.startLagHours }}h（非官方生成時間），早期{{ associationRules.comparisonHours }}h內共同≥{{ associationRules.overlapHours }}h；球面距離中位數≤{{ associationRules.medianKm }}km、80分位≤{{ associationRules.p80Km }}km，每條直接符合參考路徑，不無限串鏈。同成員模糊配對不硬併；至少3位及本批成員5%。群均線逐時≥3位及群組25%；全部路徑不做跨風暴平均。</p>
+          <p>本站機率為120km內、每成員每位置最多一次的通過比例，非官方襲擊／登陸／損害率。選G只計該群但保留完整系集分母。球面短弧裁切兩端，不跨越12h缺口、不連不同ID。缺失路徑可能使比例偏低，CSV漏整個成員可能使分母偏小、比例偏高；無路徑不等於安全。中文城市指市中心點，不是縣市覆蓋率。</p>
+          <p>原始kt／hPa及成員／ID不變，不由氣壓換算風速。WM-6已匹配均線來自供應商，WN／GENC為本站條件平均。Natural Earth 1:50m簡化海岸／國界。時窗限0–312h。查詢完成 {{ result?.checkedAt }}，非模型起報時間。<a v-if="result?.url" :href="result.url" target="_blank" rel="noopener">實際資料來源 ↗</a></p>
+          <details v-if="selectedGroup" class="ep-group-members"><summary>{{ selectedGroup.label }} 原始成員與ID（支持度非生成機率）</summary><p>不代表全體系集已同意有共同風暴。</p><ul><li v-for="track in selectedGroup.tracks" :key="`${track.sample}:${track.trackId}`">sample/member={{ track.sample }} · {{ track.trackId }}</li></ul></details>
+        </details>
       </section>
-      <aside class="ep-controls" aria-label="中遠期預報控制台">
-        <h2>控制台</h2><label>模型<select v-model="model" aria-label="Potential model" @change="run = 'latest'; storm = 'all'"><option v-for="item in models" :key="item.id" :value="item.id">{{ item.label }} · {{ item.id }}</option></select></label>
-        <label>查詢初始化<select v-model="run" aria-label="Potential initialization"><option value="latest">最新已發布（由供應商解析）</option><option v-for="item in queryRuns" :key="item.key" :value="item.key">{{ item.label }}</option></select></label><p class="ep-small">歷史選單是查詢時次，不保證每個時次有資料。圖內 init 以實際回傳資料為準，不是目前時間。</p>
-        <div class="ep-product-tabs"><button :class="{ selected: product === 'ensemble' }" :aria-pressed="product === 'ensemble'" @click="product = 'ensemble'">系集預報</button><button :class="{ selected: product === 'probability' }" :aria-pressed="product === 'probability'" @click="product = 'probability'">機率預報</button></div>
-        <label>起始時效：+{{ start }}h<input :value="start" type="range" min="0" max="306" step="6" aria-label="Potential start hour" @input="changeStart" /></label><label>結束時效：+{{ end }}h<input :value="end" type="range" min="6" max="312" step="6" aria-label="Potential end hour" @input="changeEnd" /></label>
-        <label>地圖區域<select v-model="regionId" aria-label="Potential region"><option v-for="item in regions" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
-        <label class="ep-check"><input v-model="groupCandidates" type="checkbox" aria-label="Associate candidate systems" />本站候選系統分群（非官方）</label>
-        <label>氣旋／候選群組<select v-model="storm" aria-label="Potential cyclone"><option value="all">全部獨立路徑（無共同均線）</option><optgroup v-if="matchedChoices.length" label="已匹配氣旋"><option v-for="item in matchedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="groupChoices.length" label="本站幾何候選群組（非官方身分）"><option v-for="item in groupChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="generatedChoices.length" label="保留原始獨立單成員路徑"><option v-for="item in generatedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup></select></label>
-        <label>地圖主題<select v-model="theme" aria-label="Potential map theme"><option value="light">白底</option><option value="color">彩色</option><option value="dark">黑底</option></select></label><label class="ep-check"><input v-model="showHours" type="checkbox" />顯示抽樣時效標籤</label><label class="ep-check"><input v-model="showInfo" type="checkbox" />顯示詳細說明</label>
-        <dl v-if="result" class="ep-counts"><div><dt>目前圖域／時窗</dt><dd>{{ trackCount }} 路徑 · {{ memberCount }} 成員 · {{ visible.length.toLocaleString() }} 點</dd></div><div><dt>全球原始資料</dt><dd>{{ result.catalog.points.length.toLocaleString() }} 點 · {{ result.catalog.totalSamples }} 已辨識成員</dd></div><div><dt>計算分母</dt><dd>{{ denominator ?? '不可用（未推測）' }}{{ denominator ? ' 成員；不按圖域縮小' : '' }}</dd></div><div v-if="result.wm6"><dt>WM-6 全部已載入</dt><dd>{{ result.wm6.matchedCount }} 已匹配／{{ result.wm6.unmatchedCount }} 未匹配單成員路徑</dd></div></dl>
-        <button class="ep-download" :disabled="!visible.length" @click="downloadCsv">下載圖域時窗 CSV</button><button class="ep-refresh" :disabled="loading" @click="reload">重新查詢資料</button><a class="ep-detailed" href="#weather-tools/typhoon">單一風暴資料核對 ↗</a>
+      <aside class="ep-controls" aria-label="中遠期預報控制台"><h2>主機</h2>
+        <label>模型<select v-model="model" aria-label="Potential model" @change="run='latest';storm='all'"><option v-for="item in models" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
+        <label>起報／供應商版本<select v-model="run" aria-label="Potential initialization"><option value="latest">最新已發布</option><option v-for="item in queryRuns" :key="item.key" :value="item.key">{{ item.label }}</option></select></label>
+        <label>預報類型</label><div class="ep-product-tabs"><button :class="{selected:product==='ensemble'}" @click="product='ensemble'">系集預報</button><button :class="{selected:product==='probability'}" @click="product='probability'">機率預報</button></div>
+        <label>系統（本站G非官方身分）</label><div class="ep-storm-tabs"><button :class="{selected:storm==='all'}" @click="storm='all'">全部</button><button v-for="option in matchedChoices" :key="option.key" :class="{selected:storm===option.key}" @click="storm=option.key">{{ option.key }}</button><button v-for="option in groupChoices" :key="option.key" class="ep-group-button" :class="{selected:storm===option.key}" @click="storm=option.key">{{ option.label }}</button></div>
+        <label>起始時效：+{{ start }}h<input :value="start" type="range" min="0" max="306" step="6" aria-label="Potential start hour" @input="changeStart"/></label><label>結束時效：+{{ end }}h<input :value="end" type="range" min="6" max="312" step="6" aria-label="Potential end hour" @input="changeEnd"/></label>
+        <label>地圖區域<select v-model="regionId" aria-label="Potential region" @change="focusStorm=false"><option v-for="item in regions" :key="item.id" :value="item.id">{{ item.label }}</option></select></label><label class="ep-check"><input v-model="focusStorm" type="checkbox" aria-label="Focus candidate mean"/>自動放大系統／均線</label>
+        <div class="ep-current"><strong>目前選擇</strong><p>{{ modelInfo.label }} · {{ product==='ensemble'?'系集':'機率' }} · {{ windowLabel }}</p><p>{{ selectedChoice?.label??'全部獨立路徑（無共同均線）' }}</p></div>
+        <details class="ep-advanced"><summary>進階／原始路徑</summary><label>氣旋／候選<select v-model="storm" aria-label="Potential cyclone"><option value="all">全部獨立路徑（無共同均線）</option><optgroup v-if="matchedChoices.length" label="已匹配氣旋"><option v-for="item in matchedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="groupChoices.length" label="本站幾何候選群組（非官方身分）"><option v-for="item in groupChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="generatedChoices.length" label="保留原始獨立單成員路徑"><option v-for="item in generatedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup></select></label><label class="ep-check"><input v-model="groupCandidates" type="checkbox" aria-label="Associate candidate systems"/>本站候選分群</label><label class="ep-check"><input v-model="showHours" type="checkbox"/>抽樣時效標籤</label><label>主題<select v-model="theme" aria-label="Potential map theme"><option value="light">白底</option><option value="color">彩色</option><option value="dark">黑底</option></select></label><button class="ep-download" :disabled="!visible.length" @click="downloadCsv">下載圖域時窗CSV</button><button class="ep-refresh" :disabled="loading" @click="reload">重新查詢資料</button></details>
       </aside>
     </div>
   </section>
 </template>
-
 <style scoped>
-.extended-potential { max-width: none; min-width: 0; padding: 0; color: #4e6275; }
-.ep-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 18px; }
-.ep-heading h1 { color: #365b78; font-size: 26px; }
-.ep-heading p { margin: 7px 0 0; font-size: 12px; line-height: 1.7; color: #7a8da0; }
-.ep-heading a { flex-shrink: 0; color: #3d9dd0; font-size: 12px; }
-.ep-layout { display: grid; grid-template-columns: 190px minmax(0,1fr) 248px; gap: 18px; align-items: start; }
-.ep-layout > * { min-width: 0; }
-.ep-navigation { font-size: 13px; }
-.ep-navigation details { border: 1px solid #dce5ed; border-radius: 5px; margin: 0 0 12px; background: white; overflow: hidden; }
-.ep-navigation summary { padding: 16px 13px; font-weight: 600; cursor: pointer; color: #3976a6; }
-.ep-navigation details[open] > summary { background: #e7f1fa; border-bottom: 1px solid #dce5ed; }
-.ep-navigation details > p, .ep-model-list > p { font-size: 11px; color: #8a98a7; padding: 0 13px; line-height: 1.8; }
-.ep-navigation a { display: block; padding: 12px; color: #349ed7; }
-.ep-model-list section { padding: 12px 10px; border-bottom: 1px solid #edf1f5; }
-.ep-model-list h2 { margin: 0 0 7px 6px; font-size: 15px; color: #8292a2; }
-.ep-model-list button { display: block; width: 100%; text-align: left; padding: 11px 9px; background: transparent; color: #8593a4; border-radius: 4px; font-size: 12px; line-height: 1.5; }
-.ep-model-list button small { display: block; opacity: .7; font-size: 10px; }
-.ep-model-list button.selected { color: #318ac1; background: #e4f2fc; }
-.ep-workspace { border-radius: 7px; background: white; border: 1px solid #dfe7ee; overflow: hidden; }
-.ep-chart-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 18px; border-bottom: 1px solid #e9eef3; font-size: 13px; color: #7d90a3; }
-.ep-chart-heading strong { font-size: 16px; color: #49627d; }
-.ep-storm-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px; }
-.ep-storm-tabs button, .ep-product-tabs button { background: #edf1f6; color: #8391a4; border-radius: 4px; font-size: 12px; padding: 10px 11px; }
-.ep-storm-tabs button.selected, .ep-product-tabs button.selected { color: white; background: #36a6dd; }
-.ep-status { margin: 10px 16px; padding: 12px; color: #6d89a1; font-size: 12px; line-height: 1.8; background: #f1f6fb; border-radius: 5px; overflow-wrap: anywhere; }
-.ep-status button { color: #2784b8; background: transparent; padding: 6px 12px; }
-.ep-error { color: #a13a35; background: #fff0ed; }.ep-warning { color: #997b35; background: #fff9e8; }
-.ep-group-members ul { max-height: 180px; overflow: auto; padding-left: 18px; }.ep-group-members summary { cursor: pointer; }.ep-storm-tabs .ep-group-button { border: 1px dashed #b89b58; }.ep-cluster-note { background: #fff9e8; color: #8a7138; }
-.ep-empty { display: grid; place-items: center; min-height: 360px; color: #93a2b2; }
-.ep-provenance { padding: 0 16px; color: #8295a7; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
-.ep-provenance p { margin: 10px 0; }.ep-provenance strong { color: #55738b; }
-.ep-method { padding: 16px; border-top: 1px solid #eaf0f5; color: #8697a8; font-size: 11px; line-height: 1.9; }.ep-method h2 { font-size: 13px; color: #65839b; }
-.ep-controls { border: 1px solid #dfe7ee; border-radius: 7px; background: white; padding: 17px 15px; overflow-wrap: anywhere; }
-.ep-controls h2 { margin: 0 0 16px; font-size: 16px; color: #687f92; }
-.ep-controls label { display: grid; gap: 7px; font-size: 12px; color: #7f8fa2; margin: 15px 0; }
-.ep-controls select { display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 38px; border: 1px solid #cdd8e3; border-radius: 4px; color: #6d849b; background: white; padding: 7px; font-size: 12px; text-overflow: ellipsis; }
-.ep-controls input[type=range] { width: 100%; min-width: 0; accent-color: #329fd6; }
-.ep-small { font-size: 10px; color: #9aa8b6; line-height: 1.8; }
-.ep-product-tabs { display: flex; gap: 5px; border-top: 1px solid #edf1f5; padding-top: 14px; }.ep-product-tabs button { flex: 1; }
-.ep-controls .ep-check { display: flex; align-items: center; gap: 8px; margin: 12px 0; }.ep-check input { accent-color: #36a6dd; }
-.ep-counts { font-size: 11px; line-height: 1.7; margin: 18px 0; padding-top: 7px; border-top: 1px solid #e8eef4; }.ep-counts > div { margin: 9px 0; }.ep-counts dt { color: #9aa8b7; }.ep-counts dd { margin: 4px 0 0; color: #5f7c96; }
-.ep-download, .ep-refresh { width: 100%; margin: 5px 0; padding: 11px 7px; border-radius: 20px; font-size: 12px; color: #379acf; background: #eaf5fb; }.ep-refresh { border: 1px solid #d1e5f1; background: white; }.ep-controls button:disabled { opacity: .4; cursor: default; }.ep-detailed { display: block; margin-top: 14px; text-align: center; color: #4c9ac3; font-size: 11px; }
-@media (min-width: 1800px) { .ep-layout { grid-template-columns: 225px minmax(0,1fr) 270px; gap: 24px; } }
-@media (max-width: 1150px) { .ep-layout { grid-template-columns: 165px minmax(0,1fr) 220px; gap: 12px; }.ep-controls { padding: 14px 12px; } }
-@media (max-width: 1000px) { .ep-layout { grid-template-columns: 175px minmax(0,1fr); }.ep-navigation { grid-column: 1; grid-row: 1 / span 2; }.ep-workspace { grid-column: 2; }.ep-controls { grid-column: 2; }.ep-controls label { max-width: 100%; } }
-@media (max-width: 700px) { .ep-heading { align-items: flex-start; }.ep-heading h1 { font-size: 22px; }.ep-heading a { font-size: 10px; }.ep-layout { grid-template-columns: minmax(0,1fr); }.ep-navigation, .ep-workspace, .ep-controls { grid-column: 1; grid-row: auto; }.ep-navigation { order: 0; }.ep-workspace { order: 2; }.ep-controls { order: 1; }.ep-model-list { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }.ep-model-list section { padding: 9px 5px; }.ep-model-list button { font-size: 10px; padding: 9px 4px; }.ep-model-list h2 { font-size: 13px; }.ep-model-list > p { grid-column: 1 / -1; }.ep-controls { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 12px; }.ep-controls h2, .ep-controls > .ep-small, .ep-controls > .ep-product-tabs, .ep-controls > .ep-counts, .ep-detailed { grid-column: 1 / -1; }.ep-controls label { margin: 10px 0; }.ep-chart-heading { padding: 14px; }.ep-empty { min-height: 240px; }.ep-provenance { font-size: 10px; } }
+.extended-potential{min-width:0;color:#52677a}.ep-heading{display:flex;gap:12px;align-items:baseline;margin:0 0 12px}.ep-heading h1{font-size:22px;color:#41647c}.ep-heading span{font-size:12px;color:#8194a2}.ep-layout{display:grid;grid-template-columns:minmax(0,1fr) 254px;gap:18px;align-items:start}.ep-layout>*{min-width:0}.ep-workspace{background:white;border:1px solid #e3e9ed;border-radius:10px;padding:16px;box-shadow:0 2px 6px #20354309}.ep-controls{background:white;border-radius:10px;padding:22px 17px;box-shadow:0 2px 6px #20354312}.ep-controls h2{text-align:center;font-size:17px;color:#555;margin-bottom:23px}.ep-controls label{display:block;font-size:12px;color:#697e8c;margin:17px 0 8px}.ep-controls select{width:100%;max-width:100%;min-width:0;padding:10px 8px;border:1px solid #dce4ea;border-radius:20px;background:white;color:#4d6373;font-size:12px}.ep-controls input[type=range]{display:block;width:100%;accent-color:#ff713a;margin-top:10px}.ep-controls label.ep-check{display:flex;gap:7px;align-items:center;font-size:11px}.ep-product-tabs,.ep-storm-tabs{display:flex;flex-wrap:wrap;gap:7px}.ep-product-tabs button,.ep-storm-tabs button{border:1px solid #43c1b6;color:#43b4ae;background:white;border-radius:22px;padding:9px 11px;font-size:11px}.ep-product-tabs button.selected,.ep-storm-tabs button.selected{background:#ff713a;color:white;border-color:#ff713a}.ep-current{background:#f7f8fa;padding:15px;margin-top:18px;border-radius:5px;font-size:12px;overflow-wrap:anywhere}.ep-current p{font-size:11px;color:#8a99a6;line-height:1.8}.ep-status{font-size:12px;padding:10px;background:#eef6fb;line-height:1.8}.ep-warning{background:#fff7e8;color:#9d752d}.ep-error{background:#fff0ee;color:#a0443c}.ep-provenance,.ep-cluster-note{font-size:11px;line-height:1.8;color:#7d90a0;margin:10px 0}.ep-method{font-size:11px;line-height:1.9;color:#8294a4;border-top:1px solid #e8edf1;padding-top:10px}.ep-method summary,.ep-advanced summary{cursor:pointer;color:#4a93b7}.ep-method a{color:#358dba}.ep-group-members ul{max-height:180px;overflow:auto;padding-left:18px}.ep-advanced{font-size:12px;line-height:1.7;margin-top:15px}.ep-advanced button{display:block;width:100%;border-radius:20px;padding:9px;margin-top:10px;color:#329faf;background:#eaf8fa}.ep-advanced button:disabled{opacity:.5}
+@media(max-width:800px){.ep-layout{grid-template-columns:minmax(0,1fr)}.ep-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 15px}.ep-controls h2,.ep-controls .ep-current,.ep-controls .ep-advanced{grid-column:1/-1}.ep-workspace{padding:10px}.ep-heading h1{font-size:20px}}
 </style>

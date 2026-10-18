@@ -26,8 +26,9 @@ const compact=(raw:string)=>raw.replace('T',' ').replace(/:00\.000Z$/,'Z')
     <rect width="1000" height="565" fill="white" />
     <text x="80" y="29" font-size="21" font-weight="bold" fill="currentColor">{{ cyclone }} · Ensemble-mean {{ metric === 'wind' ? 'intensity (kt)' : 'minimum pressure (hPa)' }}</text>
     <g v-for="(item,i) in series" :key="item.key" :transform="`translate(${80+i*225},55)`"><line x1="0" x2="30" :stroke="item.color" stroke-width="3" :stroke-dasharray="item.definition === 'provider_mean' ? '3 4' : item.model === 'wn3' ? '9 3' : undefined" /><text x="39" y="5" font-size="14" :fill="item.color">{{ item.label }}</text></g>
+    <rect x="80" y="90" width="885" height="330" fill="#ededed" />
     <defs><clipPath :id="clip"><rect x="80" y="90" width="885" height="330" /></clipPath></defs>
-    <g fill="#53697d" font-size="13"><g v-for="value in yTicks" :key="value"><line x1="80" x2="965" :y1="y(value)" :y2="y(value)" stroke="#dce3e9" /><text x="69" :y="y(value)+4" text-anchor="end">{{ value }}</text></g><g v-for="time in xTicks" :key="time"><line :x1="x(time)" :x2="x(time)" y1="90" y2="420" stroke="#e5ebef" /><text :x="x(time)" y="441" :text-anchor="x(time) > 925 ? 'end' : 'middle'">{{ label(time) }}</text></g></g>
+    <g fill="#53697d" font-size="13"><g v-for="value in yTicks" :key="value"><line x1="80" x2="965" :y1="y(value)" :y2="y(value)" stroke="#fff" stroke-dasharray="4 3" /><text x="69" :y="y(value)+4" text-anchor="end">{{ value }}</text></g><g v-for="time in xTicks" :key="time"><line :x1="x(time)" :x2="x(time)" y1="90" y2="420" stroke="#fff" stroke-dasharray="4 3" /><text :x="x(time)" y="441" :text-anchor="x(time) > 925 ? 'end' : 'middle'">{{ label(time) }}</text></g></g>
     <rect x="80" y="90" width="885" height="330" fill="none" stroke="#8496a5" />
     <text x="25" y="255" transform="rotate(-90 25 255)" text-anchor="middle" font-size="14" fill="currentColor">{{ metric === 'wind' ? 'Member maximum wind mean (kt)' : 'Member minimum MSLP mean (hPa, inverted)' }}</text>
     <text x="520" y="462" text-anchor="middle" font-size="13" fill="#4e6579">Valid time (UTC) · model forecast bases may differ</text>

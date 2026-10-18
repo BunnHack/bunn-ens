@@ -1,7 +1,7 @@
 const WEATHERNEXT_UPSTREAM = 'https://deepmind.google.com/science/weatherlab/download/cyclones';
 const WINDBORNE_UPSTREAM = 'https://api.windbornesystems.com/forecasts/v1/wm-6/tropical_cyclones';
 const WINDBORNE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-const MODELS = new Set(['FNV3P1', 'FNV3P2', 'WNV3']);
+const MODELS = new Set(['FNV3P1', 'FNV3P2', 'WNV3', 'OPER']);
 const CYCLES = new Set(['00z', '06z', '12z', '18z']);
 const BASINS = new Set(['AL', 'EP', 'CP', 'WP', 'NI', 'SI', 'AU', 'SP']);
 const MAX_BYTES = 10_000_000;
@@ -50,7 +50,7 @@ function validateWeatherCsv(csv, run) {
   const headers = lines[0]?.split(',');
   if (!headers?.includes('maximum_sustained_wind_speed_knots') || !headers.includes('lead_time_hours') || lines.length < 2) throw new Error('Invalid upstream CSV');
   const initIndex = headers.indexOf('init_time');
-  const init = lines[1].split(',')[initIndex];
+  const init = (lines[1].split(',')[initIndex] ?? '').trim().replace(/^\"|\"$/g, '').replace('T', ' ').replace(/Z$/, '');
   const normalized = /^\d{4}-\d{2}-\d{2}$/.test(init) ? `${init} 00:00:00` : init;
   if (normalized !== `${run.date} ${run.cycle.slice(0, 2)}:00:00`) throw new Error('Upstream initialization mismatch');
 }

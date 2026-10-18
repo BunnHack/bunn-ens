@@ -69,7 +69,7 @@ await test('Three-model UI uses UTC alignment and real means; wind/pressure/mode
   const svg=serializeChart(document.querySelector('.intensity-chart'));assert.match(svg,/forecast_zero \+ forecast_hour/);assert.match(svg,/definition=member_mean/);assert.match(svg,/N=128/)
   await select('[aria-label="Intensity metric"]','pressure');assert.equal(f.calls.length,4);assert.match(document.querySelector('[data-model="wm6"] .intensity-fix').textContent,/949.80 hPa/)
   await select('[aria-label="Intensity metric"]','wind');await click('[aria-label="Show WM-6 provider intensity mean"]');assert.equal(document.querySelectorAll('.intensity-model-curve').length,4);assert.match(document.querySelector('[data-definition="provider_mean"] .intensity-fix').textContent,/44.00 kt/);assert.match(document.querySelector('[data-definition="provider_mean"] .intensity-fix').textContent,/unknown\/128/);assert.equal(f.calls.length,4)
-  await click('.ig-controls button:last-child');const csv=await blob.text();assert.match(csv,/member_mean/);assert.match(csv,/provider_mean/);assert.match(csv,/32,128/)
+  await click('.ig-option-actions button:last-child');const csv=await blob.text();assert.match(csv,/member_mean/);assert.match(csv,/provider_mean/);assert.match(csv,/32,128/)
   await click('[aria-label="Show WNC3 intensity"]');assert.equal(document.querySelectorAll('.intensity-model-curve').length,3);assert.equal(f.calls.length,4)
   await select('[aria-label="Intensity cyclone"]','EP212026');assert.ok([...document.querySelectorAll('.intensity-model-curve')].every(node=>node.dataset.model==='wn2'));assert.match(document.querySelector('.intensity-chart > title').textContent,/EP212026/);assert.match(document.querySelector('.ig-sources').textContent,/保留先前/)
  }finally{app.unmount()}

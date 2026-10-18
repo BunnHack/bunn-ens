@@ -31,6 +31,9 @@ await test('Availability is separate from publication; hourly provider versions 
  assert.match(publicationStatus(published,{initializationTime:'2026-10-17T02:00:00Z',forecastZero:zero}),/查詢落後/)
  assert.match(publicationStatus(published,{...published,forecastZero:'2026-10-16T18:00:00Z'}),/不一致/)
  assert.match(publicationStatus(published,published),/此次查詢/)
+ assert.match(publicationStatus(published,{initializationTime:'2026-10-17T08:00:00Z',forecastZero:zero}),/同一預報基準/)
+ assert.match(publicationStatus(published,{initializationTime:'2026-10-17T08:00:00Z',forecastZero:zero}),/未宣稱其數值相同/)
+ assert.ok(!publicationStatus(published,{initializationTime:'2026-10-17T08:00:00Z',forecastZero:zero}).includes('等待排程產圖'))
  const good={initializationTime:'2026-10-17T08:00:00Z',forecastZero:'2026-10-17T06:00:00Z',inProgress:false,hours:[0,3,312],checkedAt:'2026-10-17T09:00:00Z'}
  assert.deepEqual(await loadWm6Availability(undefined,async()=>Response.json(good)),good)
  await assert.rejects(loadWm6Availability(undefined,async()=>Response.json({...good,forecastZero:'not known'})),/無效/)

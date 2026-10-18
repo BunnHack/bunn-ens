@@ -10,7 +10,7 @@ const {createApp,nextTick}=await import('vue')
 const data=await import(await compileFile('src/data/forecast-models.ts'))
 const {default:Panel}=await import(await compileFile('src/components/ForecastModels.vue'))
 const {default:App}=await import(await compileFile('src/App.vue'))
-const makeRun=(hour)=>{const id=`20261017T0${hour}00Z`,zero='2026-10-17T00:00:00Z';return{id,initializationTime:`2026-10-17T0${hour}:00:00Z`,forecastZero:zero,generatedAt:'2026-10-17T04:00:00Z',upstreamInProgress:false,requestedMaxHour:312,upstreamHours:[0,3,6,9,12,15,18],failures:[],animations:{'east-asia':{precip:`runs/${id}/east-asia/precip/forecast.gif`}},trends:hour===3?{'east-asia':{precip:{12:`runs/${id}/east-asia/precip/trend-012.gif`}}}:{},frames:[0,6,12,18].map(h=>({hour:h,validTime:new Date(Date.parse(zero)+h*3600000).toISOString(),files:Object.fromEntries(['east-asia','west-pacific'].map(r=>[r,Object.fromEntries(['precip','wind','upper','temperature'].filter(p=>h>0||p!=='precip').map(p=>[p,{png:`runs/${id}/${r}/${p}/${String(h).padStart(3,'0')}.png`,svg:`runs/${id}/${r}/${p}/${String(h).padStart(3,'0')}.svg` }]))]))}))}}
+const makeRun=(hour)=>{const id=`20261017T0${hour}00Z`,zero=hour===3?'2026-10-17T00:00:00Z':'2026-10-16T18:00:00Z';return{id,initializationTime:`2026-10-17T0${hour}:00:00Z`,forecastZero:zero,generatedAt:'2026-10-17T04:00:00Z',upstreamInProgress:false,requestedMaxHour:312,upstreamHours:[0,3,6,9,12,15,18],failures:[],animations:{'east-asia':{precip:`runs/${id}/east-asia/precip/forecast.gif`}},trends:hour===3?{'east-asia':{precip:{12:`runs/${id}/east-asia/precip/trend-012.gif`}}}:{},frames:[0,6,12,18].map(h=>({hour:h,validTime:new Date(Date.parse(zero)+h*3600000).toISOString(),files:Object.fromEntries(['east-asia','west-pacific'].map(r=>[r,Object.fromEntries(['precip','wind','upper','temperature'].filter(p=>h>0||p!=='precip').map(p=>[p,{png:`runs/${id}/${r}/${p}/${String(h).padStart(3,'0')}.png`,svg:`runs/${id}/${r}/${p}/${String(h).padStart(3,'0')}.svg` }]))]))}))}}
 const fixture=()=>({version:1,model:'WM-6',statistic:'ensemble_mean',ensembleSize:128,resolutionDegrees:.25,runs:[makeRun(3),makeRun(2)]})
 const settle=async()=>{await new Promise(r=>setTimeout(r,40));await nextTick()}
 const click=async(selector,text)=>{const button=[...document.querySelectorAll(selector)].find(e=>!text||e.textContent.includes(text));assert.ok(button,selector+' '+text);button.click();await settle()}
@@ -22,6 +22,7 @@ await test('Generated chart manifest enforces WM-6 statistic, source paths, run 
  for(const mutate of [x=>x.model='GFS',x=>x.statistic='deterministic',x=>x.runs[0].id='20261017T0400Z',x=>x.runs[0].frames[2].validTime='2026-10-17T15:00:00Z',x=>x.runs[0].frames[2].hour=318,x=>x.runs[0].frames[2].files['east-asia'].precip.png='https://evil.test/map.png',x=>x.runs[0].frames.push(x.runs[0].frames[2])]){const bad=fixture();mutate(bad);assert.throws(()=>data.parseForecastManifest(bad))}
  assert.throws(()=>data.forecastAssetUrl('../secrets.json'));assert.throws(()=>data.forecastAssetUrl('https://evil.test/x.png'))
  assert.match(data.forecastAssetUrl(parsed.runs[0].frames[2].files['east-asia'].precip.svg),/^https:\/\/bunnhack.github.io\/bunn-ens\/forecast-models\/runs\//)
+ const duplicate={...parsed.runs[0],id:'20261017T0100Z',initializationTime:'2026-10-17T01:00:00Z'},input=[duplicate,...parsed.runs];assert.equal(data.publishedForecastBases(input).length,2);assert.equal(data.publishedForecastBases(input)[0].id,parsed.runs[0].id);assert.equal(input[0],duplicate)
 })
 await test('Compressed SVG publication is lossless and downloads as a normal SVG, including already-decoded CDN responses',async t=>{
  const svg='<svg xmlns="http://www.w3.org/2000/svg"><title>WM-6 +12h</title><path d="M1 2L3 4"/></svg>'
@@ -51,7 +52,7 @@ await test('Screenshot-style viewer switches products, runs, regions and actual 
  const app=createApp(Panel);app.mount('#app');await settle()
  try{
   assert.equal(document.querySelectorAll('.fm-tabs button').length,5);assert.equal(document.querySelectorAll('.fm-tabs button:disabled').length,4)
-  assert.equal(document.querySelectorAll('.fm-products > button').length,4)
+  assert.equal(document.querySelectorAll('[aria-label="Forecast variable category"] option').length,4)
   assert.equal(document.querySelectorAll('.fm-hour-grid button').length,53)
   assert.ok(document.querySelector('[aria-label="Forecast hour 0"]').disabled);assert.ok(document.querySelector('[aria-label="Forecast hour 312"]').disabled)
   assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/20261017T0300Z\/east-asia\/precip\/012.png$/)
@@ -59,32 +60,34 @@ await test('Screenshot-style viewer switches products, runs, regions and actual 
   assert.match(document.querySelector('.fm-time-anchor').textContent,/Forecast zero: 2026-10-17 00:00:00 UTC/)
   assert.match(document.querySelector('.fm-time-anchor').textContent,/Valid: 2026-10-17 12:00:00 UTC/)
   await click('[aria-label="Previous forecast frame"]');assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/006.png$/)
-  await click('.fm-products > button','Lower Dynamics');await click('[aria-label="Forecast hour 0"]');assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/wind\/000.png$/)
+  await select('[aria-label="Forecast variable category"]','wind');await click('[aria-label="Forecast hour 0"]');assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/wind\/000.png$/)
   await click('.fm-bottom-controls button','Prev. Run');assert.match(document.querySelector('.fm-chart-image').src,/20261017T0200Z/)
   await select('[aria-label="Forecast region"]','north-america');assert.equal(document.querySelector('.fm-chart-image'),null);assert.match(document.querySelector('.fm-empty').textContent,/尚無已發布圖資/)
   await select('[aria-label="Forecast region"]','west-pacific');assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/west-pacific\/wind\/000.png$/)
-  document.querySelector('.fm-chart-image').dispatchEvent(new dom.window.Event('error'));await settle();assert.match(document.querySelector('[role="alert"]').textContent,/未以其他初始化或產品替代/)
+  document.querySelector('.fm-chart-image').dispatchEvent(new dom.window.Event('error'));await settle();assert.match(document.querySelector('[role="alert"]').textContent,/未以其他版本、產品或時效替代/)
  }finally{app.unmount()}
 })
 await test('Viewer supports keyboard/playback, fullscreen/Escape, zoom and blob-backed SVG/PNG/GIF downloads',async t=>{
  const intervals=[],downloads=[]
  t.mock.method(globalThis,'setInterval',(callback,ms)=>{intervals.push({callback,ms});return intervals.length})
  t.mock.method(globalThis,'clearInterval',()=>{})
- const fetcher=t.mock.method(globalThis,'fetch',async url=>String(url).endsWith('index.json')?Response.json(fixture()):new Response('test generated image'))
- t.mock.method(URL,'createObjectURL',()=> 'blob:forecast-test');t.mock.method(URL,'revokeObjectURL',()=>{})
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhvQAAAAASUVORK5CYII=','base64');let sequence=0
+ const fetcher=t.mock.method(globalThis,'fetch',async url=>String(url).endsWith('index.json')?Response.json(fixture()):new Response(String(url).includes('.png')?png:'<svg xmlns="http://www.w3.org/2000/svg"/>'))
+ t.mock.method(URL,'createObjectURL',()=> 'blob:forecast-test-'+(++sequence));t.mock.method(URL,'revokeObjectURL',()=>{})
  t.mock.method(dom.window.HTMLAnchorElement.prototype,'click',function(){downloads.push(this.download)})
  const app=createApp(Panel);app.mount('#app');await settle()
  try{
   document.querySelector('.fm-chart-image').dispatchEvent(new dom.window.Event('load'));await settle()
-  await click('.fm-play');intervals.find(i=>i.ms===900).callback();await settle();assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/018.png$/)
-  await click('.fm-play');document.querySelector('#forecast-models').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));await settle();assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/012.png$/)
+  await click('.fm-play');assert.match(document.querySelector('.fm-preload').textContent,/已預載 3\/3/);assert.match(document.querySelector('.fm-chart-image').src,/^blob:/);document.querySelector('.fm-chart-image').dispatchEvent(new dom.window.Event('load'));await settle();const count=fetcher.mock.calls.length;intervals.find(i=>i.ms===900).callback();await settle();assert.match(document.querySelector('.fm-chart-image').alt,/\+18h/);assert.equal(fetcher.mock.calls.length,count)
+  await click('.fm-play');document.querySelector('#forecast-models').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));await settle();assert.match(document.querySelector('.fm-chart-image').alt,/\+12h/)
   await click('.fm-image-controls button','放大地圖');assert.ok(document.querySelector('.fm-display-enlarged'));assert.equal(document.body.style.overflow,'hidden')
   await click('[aria-label="Zoom in forecast map"]');assert.match(document.querySelector('.fm-chart-image').style.width,/125%/)
   document.querySelector('.fm-display').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await settle();assert.equal(document.querySelector('.fm-display-enlarged'),null);assert.equal(document.body.style.overflow,'')
   for(const label of ['下載 SVG','下載 PNG'])await click('.fm-image-controls button',label)
-  await click('.fm-bottom-controls button','FORECAST GIF');await click('.fm-bottom-controls button','TREND GIF')
-  assert.deepEqual(downloads.map(n=>n.split('-').pop()),['012.svg','012.png','forecast.gif','012.gif'])
-  assert.ok(fetcher.mock.calls.filter(call=>String(call.arguments[0]).startsWith(data.FORECAST_BASE)&&!String(call.arguments[0]).endsWith('index.json')).every(call=>call.arguments[1].cache==='no-cache'))
+  await click('.fm-bottom-controls button','FORECAST GIF');assert.equal(document.querySelector('[role="dialog"]').getAttribute('aria-label'),'Make a Forecast GIF');assert.equal(document.querySelector('[aria-label="GIF start hour"]').value,'6');assert.equal(document.querySelector('[aria-label="GIF end hour"]').value,'18');assert.equal(document.body.style.overflow,'hidden');await click('[aria-label="Close GIF dialog"]');assert.equal(document.body.style.overflow,'')
+  await click('.fm-bottom-controls button','TREND GIF');assert.match(document.querySelector('.fg-dialog').textContent,/可用 2 個不同預報基準/);assert.equal(document.querySelector('.fg-create').disabled,false);await click('[aria-label="Close GIF dialog"]')
+  assert.deepEqual(downloads.map(n=>n.split('-').pop()),['012.svg','012.png'])
+  const calls=fetcher.mock.calls.filter(call=>String(call.arguments[0]).startsWith(data.FORECAST_BASE)&&!String(call.arguments[0]).endsWith('index.json'));assert.ok(calls.every(call=>call.arguments[1].credentials==='omit'));assert.equal(calls.filter(call=>call.arguments[1].cache==='force-cache').length,3);assert.equal(calls.filter(call=>call.arguments[1].cache==='no-cache').length,2)
  }finally{app.unmount()}
 })
 await test('Republishing the same initialization busts image caches without changing the model time or selected hour',async t=>{

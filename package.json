@@ -12,6 +12,7 @@
   "dependencies": {
     "@vitejs/plugin-vue": "latest",
     "d3-contour": "^4.0.2",
+    "gifenc": "^1.0.3",
     "vite": "latest",
     "vue": "latest",
     "vue-tsc": "latest"

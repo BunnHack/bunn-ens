@@ -27,7 +27,7 @@ export function createWnc2Proxy(fetcher: typeof fetch = fetch, now: () => Date =
     const cycle = url.searchParams.get('cycle') ?? 'latest'
     const date = url.searchParams.get('date') ?? undefined
     const parsedDate = date ? new Date(`${date}T00:00:00Z`) : null
-    if (!['FNV3P1', 'FNV3P2', 'WNV3'].includes(model) || !['latest', '00z', '06z', '12z', '18z'].includes(cycle)) { fail(400, 'Invalid model or cycle'); return }
+    if (!['FNV3P1', 'FNV3P2', 'WNV3', 'OPER'].includes(model) || !['latest', '00z', '06z', '12z', '18z'].includes(cycle)) { fail(400, 'Invalid model or cycle'); return }
     if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsedDate!.getTime()) || parsedDate!.toISOString().slice(0,10) !== date || cycle === 'latest')) { fail(400, 'Invalid date or date/latest combination'); return }
     const clock = now()
     const runs = candidateRuns(clock, model as Model, cycle as Cycle | 'latest', date)

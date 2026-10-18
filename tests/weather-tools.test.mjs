@@ -41,8 +41,8 @@ try {
       if (tool.id === 'extended') {
         assert.equal(document.querySelector('.extended-potential h1').textContent, '中遠期襲擊潛勢')
         assert.ok(document.querySelector('[aria-label="Potential start hour"]'))
-        assert.equal(document.querySelector('.ep-heading a').getAttribute('href'), '#weather-tools')
-        assert.match(document.querySelector('.ep-method').textContent, /非官方警報/)
+        assert.equal(document.querySelector('.basin-workspace-tabs [aria-current="page"]').getAttribute('href'), '#weather-tools/extended')
+        assert.match(document.querySelector('.ep-method').textContent, /非官方襲擊／登陸／損害率/)
         continue
       }
       if (tool.id === 'basin') {

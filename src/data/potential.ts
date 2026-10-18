@@ -2,7 +2,7 @@ import { eastLongitude, ensembleFromPoints, loadEnsemble, normalizeInit, sourceU
 import { loadWm6, loadWm6Cyclone, type Wm6Cyclone, type Wm6CycloneDetail, type Wm6Point, type Wm6Response } from './wm6'
 import type { BasinRegion } from './basin'
 
-export type PotentialModel = 'wn3' | 'wn2' | 'wm6'
+export type PotentialModel = 'wn3' | 'wn2' | 'wm6' | 'genc'
 export type PotentialResult = { catalog: Catalog; source: 'remote' | 'snapshot'; checkedAt: string; warning?: string; url?: string; details: Record<string, Wm6CycloneDetail>; wm6?: { forecastZero: string; matchedCount: number; unmatchedCount: number; includedUnofficial: boolean } }
 export const isUnmatchedWm6Id = (id: string) => !/^[A-Z]{2}\d{6}$/.test(id)
 // Current provider-generated IDs encode the real ensemble member in _M###.
@@ -20,7 +20,7 @@ export const potentialModels = [
   { id: 'aifs', label: 'AIFS', status: '未接入' },
   { id: 'gefs', label: 'GEFS', status: '未接入' },
   { id: 'aigefs', label: 'AIGEFS', status: '未接入' },
-  { id: 'genc', label: 'GENC', status: '未接入' },
+  { id: 'genc', label: 'GENC', status: 'OPER · 可用' },
 ]
 export function wm6TrackPoint(point: Wm6Point, id: string, sample: number, initTime: string): TrackPoint | null {
   if (![point.latitude, point.longitude, point.forecast_hour].every(Number.isFinite) || Math.abs(point.latitude) > 90 || Math.abs(point.longitude) > 360 || point.forecast_hour < 0 || point.forecast_hour > 312) return null
@@ -46,7 +46,7 @@ export function wm6Catalog(details: Wm6CycloneDetail[], initialization: string, 
 export async function loadPotential(model: PotentialModel, run: string, signal?: AbortSignal, fetcher: typeof fetch = fetch, options: { includeUnofficial?: boolean } = {}): Promise<PotentialResult> {
   if (model !== 'wm6') {
     const [date, cycle] = run.split('|')
-    const result = await loadEnsemble({ model: model === 'wn3' ? 'WNV3' : 'FNV3P1', cycle: run === 'latest' ? 'latest' : cycle as Cycle, date: run === 'latest' ? undefined : date }, signal, fetcher)
+    const result = await loadEnsemble({ model: model === 'genc' ? 'OPER' : model === 'wn3' ? 'WNV3' : 'FNV3P1', cycle: run === 'latest' ? 'latest' : cycle as Cycle, date: run === 'latest' ? undefined : date }, signal, fetcher)
     return { ...result, url: sourceUrl(result.run), details: {} }
   }
   const initialization = run === 'latest' ? 'latest' : `${run.split('|')[0]}T${run.split('|')[1]!.slice(0, 2)}:00:00Z`

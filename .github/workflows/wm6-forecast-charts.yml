@@ -1,11 +1,12 @@
 name: Generate WM-6 forecast charts
 on:
   schedule:
+    # Probe availability hourly; generate/publish only a new base or pinned repair.
     - cron: '25 * * * *'
   workflow_dispatch:
     inputs:
       initialization:
-        description: 'Exact WM-6 initialization (ISO UTC), or latest'
+        description: 'Exact WM-6 provider version (ISO UTC), or latest; base is the update identity'
         default: latest
         type: string
       max_hour:
@@ -16,6 +17,10 @@ on:
         description: 'Optional comma-separated hours, e.g. 0,6,12,312 (empty = full sequence)'
         default: ''
         type: string
+      force:
+        description: 'Explicitly replace the selected base with this provider; rebuild requested hours (normally leave false)'
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -31,7 +36,7 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || 'https://bunnhack.github.io/bunn-ens/' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,28 +45,42 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements-forecast.txt
       - run: pip install -r scripts/requirements-forecast.txt
-      - name: Test physical conversions and run isolation
+      - name: Test physical conversions, base identity and run isolation
         run: python -m unittest discover -s tests -p 'test_forecast*.py' -v
-      - name: Restore previous published run
-        uses: actions/cache@v4
+      - name: Restore last successfully published forecast bases
+        uses: actions/cache/restore@v4
         with:
           path: .generated-site/forecast-models
           key: wm6-chart-history-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: wm6-chart-history-
-      - name: Generate charts from authenticated native WM-6 archive byte ranges
+      - name: Generate a new forecast base or repair its pinned native WM-6 version
+        id: charts
         env:
           WM_API_KEY: ${{ secrets.WM_API_KEY }}
           INITIALIZATION: ${{ inputs.initialization || 'latest' }}
           MAX_HOUR: ${{ inputs.max_hour || '312' }}
           HOURS: ${{ inputs.hours || '' }}
+          FORCE: ${{ inputs.force || 'false' }}
           WM_API_INTERVAL_SECONDS: '15'
-        run: python scripts/wm6_forecast.py --initialization "$INITIALIZATION" --max-hour "$MAX_HOUR" --hours "$HOURS"
+        run: |
+          args=()
+          if [ "$FORCE" = "true" ]; then args+=(--force); fi
+          python scripts/wm6_forecast.py --initialization "$INITIALIZATION" --max-hour "$MAX_HOUR" --hours "$HOURS" "${args[@]}"
       - name: Configure GitHub Pages
+        if: steps.charts.outputs.changed == 'true'
         uses: actions/configure-pages@v5
       - name: Upload generated charts only
+        if: steps.charts.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: .generated-site
       - name: Publish chart assets
+        if: steps.charts.outputs.changed == 'true'
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Cache only successfully published bases
+        if: steps.charts.outputs.changed == 'true' && steps.deployment.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .generated-site/forecast-models
+          key: wm6-chart-history-${{ github.run_id }}-${{ github.run_attempt }}

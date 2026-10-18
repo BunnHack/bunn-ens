@@ -462,6 +462,48 @@ def build_animations(record, older, out):
             record['trends'][rid][pid] = trends
 
 
+GENERATOR_VERSION = 'native-zarr-v3-time'
+
+
+def frame_assets_complete(frame, record, out):
+    """Only trust the pinned run's expected public paths and valid-time anchor."""
+    try:
+        hour = frame['hour']
+        if not isinstance(hour, int) or hour < 0 or hour > 312 or hour % 6:
+            return False
+        if utc(frame['validTime']) != utc(record['forecastZero']) + timedelta(hours=hour):
+            return False
+        for region in REGIONS:
+            for product in PRODUCTS:
+                if hour == 0 and product['id'] == 'precip':
+                    continue
+                files = frame['files'][region['id']][product['id']]
+                prefix = f"runs/{record['id']}/{region['id']}/{product['id']}/{hour:03d}"
+                if files['png'] != prefix + '.png' or files['svg'] not in (prefix + '.svg', prefix + '.svgz'):
+                    return False
+                if any(not (out / files[key]).is_file() or (out / files[key]).stat().st_size == 0 for key in ('png', 'svg')):
+                    return False
+        return True
+    except (KeyError, TypeError, ValueError, OSError):
+        return False
+
+
+def cached_forecast_base(previous, forecast_zero, out):
+    """A base selects one provider version; hourly provider changes do not replace it."""
+    for record in previous.get('runs', []):
+        try:
+            if record.get('generatorVersion') == GENERATOR_VERSION and utc(record['forecastZero']) == utc(forecast_zero) and record['id'] == run_id(record['initializationTime']) and (out / 'runs' / record['id']).is_dir():
+                return record
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
+
+
+def base_assets_complete(record, requested, out):
+    frames = {frame['hour']: frame for frame in record.get('frames', [])}
+    return bool(requested) and all(hour in frames and frame_assets_complete(frames[hour], record, out) for hour in requested)
+
+
 def generate(args):
     key = os.environ.get('WM_API_KEY')
     if not key:
@@ -474,31 +516,53 @@ def generate(args):
     if args.initialization != 'latest' and utc(run['initialization_time']) != utc(args.initialization):
         raise ValueError('Requested initialization mismatch')
     utc(run['forecast_zero'])
-    identifier = run_id(run['initialization_time'])
     available = sorted({int(item['forecast_hour']) for item in run['available'] if 0 <= int(item['forecast_hour']) <= 312})
     hours = [hour for hour in available if hour % 6 == 0 and hour <= args.max_hour]
     if not hours:
         raise ValueError('No available 6-hourly forecast frames in requested window')
+    requested = {int(value) for value in args.hours.split(',')} if args.hours else set(hours)
+    if not requested or any(hour < 0 or hour > args.max_hour or hour % 6 for hour in requested):
+        raise ValueError('Requested hours must be comma-separated 0–312h multiples of six')
+    if not requested.intersection(hours):
+        raise ValueError('No requested forecast hours are currently available')
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     manifest_path = out / 'index.json'
     previous = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'runs': []}
+    base_record = cached_forecast_base(previous, run['forecast_zero'], out)
+    force = bool(getattr(args, 'force', False))
+    if base_record and not force:
+        if base_assets_complete(base_record, requested.intersection(hours), out):
+            print(f"Forecast base {base_record['forecastZero']} already published with provider {base_record['initializationTime']}; no hourly-version regeneration or publication.", flush=True)
+            return False
+        if utc(base_record['initializationTime']) != utc(run['initialization_time']):
+            if args.initialization != 'latest':
+                raise ValueError('This forecast base is pinned to a different provider version; use --force to explicitly replace it')
+            print(f"Repairing incomplete forecast base with its original provider {base_record['initializationTime']}, not mixing hourly versions.", flush=True)
+            with request(session, '/run_information', {'initialization_time': base_record['initializationTime']}) as response:
+                pinned = response.json()
+            if utc(pinned['initialization_time']) != utc(base_record['initializationTime']) or utc(pinned['forecast_zero']) != utc(base_record['forecastZero']):
+                raise ValueError('Pinned forecast-base metadata mismatch; preserving published charts')
+            run = pinned
+            available = sorted({int(item['forecast_hour']) for item in run['available'] if 0 <= int(item['forecast_hour']) <= 312})
+            hours = [hour for hour in available if hour % 6 == 0 and hour <= args.max_hour]
+            if not requested.intersection(hours) or base_assets_complete(base_record, requested.intersection(hours), out):
+                print('Original pinned version has no additional available requested charts; preserving its dated publication.', flush=True)
+                return False
+    identifier = run_id(run['initialization_time'])
     current_directory = out / 'runs' / identifier
-    cached_run = next((item for item in previous.get('runs', []) if item.get('id') == identifier and item.get('generatorVersion') == 'native-zarr-v3-time' and utc(item['forecastZero']) == utc(run['forecast_zero'])), None)
+    cached_run = base_record if base_record and base_record['id'] == identifier and not force else None
     if current_directory.is_dir() and cached_run is None:
         shutil.rmtree(current_directory)
     record = {'id': identifier, 'initializationTime': iso(utc(run['initialization_time'])), 'forecastZero': iso(utc(run['forecast_zero'])), 'generatedAt': '', 'upstreamInProgress': bool(run.get('in_progress')), 'upstreamHours': available, 'requestedMaxHour': args.max_hour, 'frames': [], 'failures': []}
-    record['generatorVersion'] = 'native-zarr-v3-time'
+    record['generatorVersion'] = GENERATOR_VERSION
     record['mslpCenters'] = True
-    requested = {int(value) for value in args.hours.split(',')} if args.hours else set(hours)
-    if not requested or any(hour < 0 or hour > args.max_hour or hour % 6 for hour in requested):
-        raise ValueError('Requested hours must be comma-separated 0–312h multiples of six')
     record['requestedHours'] = sorted(requested)
     verified = False
+    new_charts = 0
     for hour in hours:
         cached = next((frame for frame in (cached_run or {}).get('frames', []) if frame['hour'] == hour), None)
-        expected = [product['id'] for product in PRODUCTS if hour >= 6 or product['id'] != 'precip']
-        if cached and all(cached['files'].get(region['id'], {}).get(product) and all((out / cached['files'][region['id']][product][ext]).is_file() for ext in ('png', 'svg')) for region in REGIONS for product in expected):
+        if cached and frame_assets_complete(cached, cached_run, out):
             record['frames'].append(cached)
             print(f'Reusing verified WM-6 {identifier} +{hour:03d}h chart assets', flush=True)
             continue
@@ -536,14 +600,18 @@ def generate(args):
                     continue
                 path = Path('runs') / identifier / region['id'] / name / f'{hour:03d}'
                 render_chart(fields, region, name, run, hour, out / path)
+                new_charts += 1
                 frame['files'][region['id']][name] = {'png': str(path.with_suffix('.png')), 'svg': str(path.with_suffix('.svgz'))}
         if any(frame['files'][region['id']] for region in REGIONS):
             record['frames'].append(frame)
     if not record['frames']:
         raise RuntimeError('No real charts generated; refusing to replace published charts')
-    history = [item for item in previous.get('runs', []) if item.get('id') != identifier and item.get('id', '').isalnum() and (out / 'runs' / item['id']).is_dir()][:1]
-    records = sorted([record] + history, key=lambda item: utc(item['initializationTime']), reverse=True)
-    older = next((item for item in history if utc(item['initializationTime']) < utc(record['initializationTime'])), None)
+    if cached_run and new_charts == 0:
+        print('::warning::No new usable charts in pinned repair; preserving the prior publication timestamp and manifest.', flush=True)
+        return False
+    history = sorted([item for item in previous.get('runs', []) if item.get('id') != identifier and item.get('id', '').isalnum() and item.get('forecastZero') and utc(item['forecastZero']) != utc(record['forecastZero']) and (out / 'runs' / item['id']).is_dir()], key=lambda item: utc(item['forecastZero']), reverse=True)[:1]
+    records = sorted([record] + history, key=lambda item: utc(item['forecastZero']), reverse=True)
+    older = next((item for item in history if utc(item['forecastZero']) < utc(record['forecastZero'])), None)
     build_animations(record, older, out)
     record['generatedAt'] = iso(datetime.now(timezone.utc))
     def site_bytes(items):
@@ -564,6 +632,7 @@ def generate(args):
     print(f"Published manifest: {len(record['frames'])} hours, {len(record['failures'])} field failures", flush=True)
     if record['failures']:
         print('::warning::Some WM-6 fields were unavailable; missing products are disabled, not fabricated.')
+    return True
 
 
 if __name__ == '__main__':
@@ -572,4 +641,8 @@ if __name__ == '__main__':
     parser.add_argument('--max-hour', type=int, default=312, choices=range(0, 313, 6))
     parser.add_argument('--hours', default='', help='Optional comma-separated published hours; empty generates all available 6-hourly frames')
     parser.add_argument('--output', default='.generated-site/forecast-models')
-    generate(parser.parse_args())
+    parser.add_argument('--force', action='store_true', help='Explicitly replace the selected forecast base; rebuild requested hours rather than reuse its pinned publication')
+    changed = generate(parser.parse_args())
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f"changed={'true' if changed else 'false'}\n")
