@@ -109,7 +109,7 @@ await test('Forecast Models is an internal deep link and returning to storms pre
   const lead=document.querySelector('[aria-label="Maximum forecast lead hours"]');lead.value='120';lead.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await settle()
   const link=[...document.querySelectorAll('.main-navigation a')].find(a=>a.textContent==='Forecast Models');assert.equal(link.getAttribute('href'),'#forecast-models');assert.equal(link.getAttribute('target'),null)
   window.location.hash='#forecast-models';await settle();assert.ok(document.querySelector('.fm-layout'));assert.equal(document.querySelector('.main-navigation [aria-current="page"]').textContent,'Forecast Models');assert.equal(document.querySelector('#main-content').style.display,'none');assert.equal(document.activeElement,document.querySelector('#forecast-models h1'))
-  window.location.hash='#main-content';await settle();assert.equal(document.querySelector('#forecast-models').style.display,'none');assert.equal(lead.value,'120');assert.equal(document.querySelector('#main-content').style.display,'')
+  window.location.hash='#main-content';await settle();assert.equal(document.querySelector('.forecast-workspace').style.display,'none');assert.equal(lead.value,'120');assert.equal(document.querySelector('#main-content').style.display,'')
  }finally{app.unmount();window.location.hash=''}
 })
 await test('Actions limits credentials to generation and publishes only chart assets on a schedule',async()=>{

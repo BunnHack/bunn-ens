@@ -49,8 +49,8 @@ await test('UTC overview display window removes stale-run bias without moving or
  const base='2026-10-14T12:00:00.000Z',later='2026-10-17T18:00:00.000Z',offset=(Date.parse(later)-Date.parse(base))/3600000
  const track=(model,zero,hours)=>({model,label:model,color:'red',initialization:zero,forecastZero:zero,source:'remote',points:hours.map(h=>({lat:12+h/100,lon:-110+h/100,leadHours:h+(Date.parse(zero)-Date.parse(base))/3600000}))})
  const data={base,tracks:[track('FENGQING',base,[offset,offset+6,offset+144]),track('wn2',later,[0,6,120,126])]};const saved=JSON.stringify(data),view=overviewWindow(data)
- assert.equal(view.base,later);assert.equal(view.tracks.length,1);assert.equal(view.older[0].model,'FENGQING');assert.deepEqual(view.tracks[0].points.map(p=>p.leadHours),[0,6,120]);assert.equal(JSON.stringify(data),saved);assert.equal(overviewWindow(data,0,true).tracks.length,2);assert.equal(overviewPointUtc(view.base,view.tracks[0].points[1]),'2026-10-18T00:00:00.000Z')
- const labels=overviewLabels(view.tracks,view.base,p=>({x:300+p.leadHours,y:300+p.leadHours}));assert.ok(labels.length<=2);assert.ok(labels.every(p=>/^\d\d-\d\d \d\dZ$/.test(p.text)))
+ assert.equal(view.base,later);assert.equal(view.tracks.length,2);assert.equal(view.older[0].model,'FENGQING');assert.deepEqual(view.tracks[1].points.map(p=>p.leadHours),[0,6,120,126]);assert.equal(JSON.stringify(data),saved);assert.equal(overviewWindow(data,120,false).tracks.length,1);assert.equal(overviewPointUtc(view.base,view.tracks[1].points[1]),'2026-10-18T00:00:00.000Z')
+ const labels=overviewLabels(view.tracks,view.base,p=>({x:300+p.leadHours,y:300+p.leadHours}));assert.ok(labels.length<=4);assert.ok(labels.every(p=>/^\+\d+h · \d\d-\d\d \d\dZ$/.test(p.text)))
 })
 await test('Medium-range zoom adds context only; existing category thresholds/colors and mean arithmetic are untouched',async()=>{
  const points=[{lat:12,lon:135},{lat:14,lon:140}],fallback={west:100,east:180,south:0,north:60},old=focusTrackRegion(points,fallback),wide=focusTrackRegion(points,fallback,1.5);assert.ok(wide.east-wide.west>old.east-old.west);assert.ok(wide.north-wide.south>old.north-old.south)

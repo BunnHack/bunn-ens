@@ -1,7 +1,7 @@
 import type { OverviewPoint, OverviewTrack } from './overview'
 export type OverviewData = { base: string; tracks: OverviewTrack[] }
 // Display-only UTC clipping; original model bases, identities and fixes are not rewritten.
-export function overviewWindow(data: OverviewData, hours = 120, includeOlder = false) {
+export function overviewWindow(data: OverviewData, hours = 0, includeOlder = true) {
   if (!data.tracks.length) return { ...data, end: '', older: [] as OverviewTrack[] }
   const start=Math.max(...data.tracks.map(t=>Date.parse(t.forecastZero)))
   if(!Number.isFinite(start)||!Number.isFinite(Date.parse(data.base)))return {base:'',end:'',tracks:[],older:[] as OverviewTrack[]}
@@ -24,7 +24,7 @@ export function overviewLabels(tracks:OverviewTrack[],base:string,project:(p:Ove
     const candidates=t.points.filter((p,i)=>i===t.points.length-1||Date.parse(overviewPointUtc(base,p))%(48*3600000)===0).reverse()
     let n=0
     for(const point of candidates){const pos=project(point);if(pos.x<65||pos.x>1435||pos.y<120||pos.y>975||used.some(p=>Math.abs(p.x-pos.x)<110&&Math.abs(p.y-pos.y)<25))continue
-      const utc=overviewPointUtc(base,point);used.push(pos);labels.push({model:t.model,color:t.color,point,utc,text:utc.slice(5,10)+' '+utc.slice(11,13)+'Z'});if(++n>=2)break
+      const utc=overviewPointUtc(base,point),native=(Date.parse(utc)-Date.parse(t.forecastZero))/3600000;used.push(pos);labels.push({model:t.model,color:t.color,point,utc,text:`+${native}h · ${utc.slice(5,10)} ${utc.slice(11,13)}Z`});if(++n>=2)break
     }
   }
   return labels

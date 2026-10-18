@@ -1,9 +1,12 @@
 import { eastLongitude, ensembleFromPoints, loadEnsemble, normalizeInit, sourceUrl, trackOptions, type Catalog, type Cycle, type MeanPoint, type TrackPoint } from './wnc2'
 import { loadWm6, loadWm6Cyclone, type Wm6Cyclone, type Wm6CycloneDetail, type Wm6Point, type Wm6Response } from './wm6'
 import type { BasinRegion } from './basin'
+import { loadNcep } from './ncep'
+import { cycloneLabel } from './cyclone-label'
+import type { NcepDataset } from '../../shared/ncep-protocol.js'
 
-export type PotentialModel = 'wn3' | 'wn2' | 'wm6' | 'genc'
-export type PotentialResult = { catalog: Catalog; source: 'remote' | 'snapshot'; checkedAt: string; warning?: string; url?: string; details: Record<string, Wm6CycloneDetail>; wm6?: { forecastZero: string; matchedCount: number; unmatchedCount: number; includedUnofficial: boolean } }
+export type PotentialModel = 'wn3' | 'wn2' | 'wm6' | 'genc' | 'gefs' | 'aigefs'
+export type PotentialResult = { catalog: Catalog; source: 'remote' | 'snapshot'; checkedAt: string; warning?: string; url?: string; details: Record<string, Wm6CycloneDetail>; ncep?: NcepDataset; wm6?: { forecastZero: string; matchedCount: number; unmatchedCount: number; includedUnofficial: boolean } }
 export const isUnmatchedWm6Id = (id: string) => !/^[A-Z]{2}\d{6}$/.test(id)
 // Current provider-generated IDs encode the real ensemble member in _M###.
 // Unknown ID formats must be resolved through detail, never assigned a made-up member.
@@ -18,8 +21,8 @@ export const potentialModels = [
   { id: 'wm6', label: 'WM-6', status: '可用' },
   { id: 'ecmwf', label: 'ECMWF', status: '未接入' },
   { id: 'aifs', label: 'AIFS', status: '未接入' },
-  { id: 'gefs', label: 'GEFS', status: '未接入' },
-  { id: 'aigefs', label: 'AIGEFS', status: '未接入' },
+  { id: 'gefs', label: 'GEFS', status: '31成员 · 0–120h · workflow成图' },
+  { id: 'aigefs', label: 'AIGEFS', status: '31成员 · 0–240h · workflow成图' },
   { id: 'genc', label: 'GENC', status: 'OPER · 可用' },
 ]
 export function wm6TrackPoint(point: Wm6Point, id: string, sample: number, initTime: string): TrackPoint | null {
@@ -44,6 +47,10 @@ export function wm6Catalog(details: Wm6CycloneDetail[], initialization: string, 
   return { initTime, points, totalSamples: new Set(points.map(point => point.sample)).size, rawMaxLead: points.reduce((max, point) => Math.max(max, point.leadHours), 0) }
 }
 export async function loadPotential(model: PotentialModel, run: string, signal?: AbortSignal, fetcher: typeof fetch = fetch, options: { includeUnofficial?: boolean } = {}): Promise<PotentialResult> {
+  if (model === 'gefs' || model === 'aigefs') {
+    const initialization=run==='latest'?'latest':`${run.split('|')[0]}T${run.split('|')[1]!.slice(0,2)}:00:00Z`
+    return loadNcep(model==='gefs'?'GEFS':'AIGEFS',initialization,signal,fetcher)
+  }
   if (model !== 'wm6') {
     const [date, cycle] = run.split('|')
     const result = await loadEnsemble({ model: model === 'genc' ? 'OPER' : model === 'wn3' ? 'WNV3' : 'FNV3P1', cycle: run === 'latest' ? 'latest' : cycle as Cycle, date: run === 'latest' ? undefined : date }, signal, fetcher)
@@ -76,7 +83,8 @@ export async function loadPotential(model: PotentialModel, run: string, signal?:
 export function cycloneChoices(result: PotentialResult) {
   return trackOptions(result.catalog).map(option => {
     const kind = result.wm6 && isUnmatchedWm6Id(option.key) ? 'unmatched' : option.key.startsWith('genesis:') ? 'genesis' : 'matched'
-    return { ...option, kind, label: kind === 'unmatched' ? `${option.key} · 未匹配單成員 ${option.points[0]!.sample}` : option.label }
+    const label=kind==='matched'?`${cycloneLabel(option.key)} · ${new Set(option.points.map(p=>p.sample)).size}${result.ncep?'/31':''} members`:result.ncep?`${option.points[0]!.nativeMember} / sample ${option.points[0]!.sample} · ${option.points[0]!.sourceKind} · ${option.points[0]!.sourceId}`:kind==='unmatched'?`${option.key} · 未匹配单成员 ${option.points[0]!.sample}`:option.label
+    return { ...option, kind, label }
   })
 }
 export function cycloneCatalog(result: PotentialResult, key: string): Catalog {
@@ -85,6 +93,7 @@ export function cycloneCatalog(result: PotentialResult, key: string): Catalog {
 }
 export function cycloneMean(result: PotentialResult, key: string): MeanPoint[] {
   const catalog = cycloneCatalog(result, key)
+  if (result.ncep && !/^[A-Z]{2}\d{6}$/.test(key)) return [] // Genesis/field L identities are per member, not cross-member storms.
   if (result.wm6 && isUnmatchedWm6Id(key)) return [] // A single unmatched track is not an ensemble mean.
   const detail = result.details[key]
   if (detail) return detail.mean_path.flatMap(point => {
@@ -94,7 +103,7 @@ export function cycloneMean(result: PotentialResult, key: string): MeanPoint[] {
   if (!catalog.points.length) return []
   const data = ensembleFromPoints(catalog.points, key)
   // Circular longitude mean avoids putting dateline-crossing storms at Greenwich.
-  return data.mean.filter(point => point.count >= Math.ceil(data.members.length * .25)).map(mean => {
+  return data.mean.filter(point => point.count >= Math.ceil((result.ncep ? 31 : data.members.length) * .25)).map(mean => {
     const points = catalog.points.filter(point => point.leadHours === mean.leadHours)
     const rad = Math.PI / 180
     return { ...mean, lon: eastLongitude(Math.atan2(points.reduce((sum, point) => sum + Math.sin(point.lon * rad), 0), points.reduce((sum, point) => sum + Math.cos(point.lon * rad), 0)) / rad) }

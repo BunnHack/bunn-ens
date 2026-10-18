@@ -23,13 +23,13 @@ await test('Partial refresh retains only the same source ID, old check date and 
   const next=retainStormEntries(parseCurrentStorms(value),old)
   assert.equal(next.entries[0].retained,true);assert.equal(next.entries[0].checkedAt,old.checkedAt);assert.equal(next.entries[1].data,null);assert.equal(next.entries[1].retained,undefined)
 })
-await test('Public Worker follows provider time, fixed origins and bounded fanout; strips cones and private fields',async t=>{
+await test('Public Worker preserves genuine bounded cone/spline geometry and strips private fields',async t=>{
   const calls=[];t.mock.method(globalThis,'fetch',async(raw,options)=>{const u=new URL(raw);calls.push({u,options});assert.equal(u.origin,'https://zoom.earth');assert.equal(options.credentials,'omit');assert.equal(options.redirect,'manual');assert.equal(options.headers.authorization,undefined)
     if(u.pathname==='/data/time/')return Response.json({time:Date.parse(fixture.providerTime)/1000})
     if(u.searchParams.has('date')){assert.equal(u.searchParams.get('date'),fixture.catalogDate);assert.equal(u.searchParams.get('to'),'12');return Response.json({storms:['champi-2026'],disturbances:[]})}
-    assert.equal(u.searchParams.get('lang'),'zh');return Response.json({...fixture.entries[0].data,cone:{coordinates:[[1,2]]},privateKey:'SHOULD_NOT_PASS',track:fixture.entries[0].data.track.map(p=>({...p,spline:[[1,2]],privateKey:'PRIVATE'}))})
+    assert.equal(u.searchParams.get('lang'),'zh');const source=JSON.parse(await readFile('tests/fixtures/zoom-geometry.json','utf8'));return Response.json({...source,privateKey:'SHOULD_NOT_PASS',track:source.track.map(p=>({...p,privateKey:'PRIVATE'}))})
   })
-  const u=new URL('https://app.test/api/current-storms'),r=await handleCurrentStorms(new Request(u),ctx,u),j=await r.json();assert.equal(r.status,200);assert.equal(calls.length,3);assert.equal(j.providerTime,fixture.providerTime);assert.equal(j.entries[0].data.track[0].wind,29);assert.doesNotMatch(JSON.stringify(j),/cone|spline|PRIVATE|SHOULD_NOT_PASS/);assert.equal(parseCurrentStorms(j).entries.length,1)
+  const u=new URL('https://app.test/api/current-storms'),r=await handleCurrentStorms(new Request(u),ctx,u),j=await r.json();assert.equal(r.status,200);assert.equal(calls.length,3);assert.equal(j.providerTime,fixture.providerTime);assert.equal(j.entries[0].data.track[0].wind,29);assert.doesNotMatch(JSON.stringify(j),/PRIVATE|SHOULD_NOT_PASS/);const original=JSON.parse(await readFile('tests/fixtures/zoom-geometry.json','utf8'));assert.deepEqual(j.entries[0].data.cone,original.cone);assert.deepEqual(j.entries[0].data.track[1].spline,original.track[1].spline);assert.equal(parseCurrentStorms(j).entries.length,1)
 })
 await test('Worker refuses arbitrary parameters, methods, redirects and all failed storm details without fallback',async t=>{
   const u=new URL('https://app.test/api/current-storms?url=https://example.org');assert.equal((await handleCurrentStorms(new Request(u),ctx,u)).status,400);u.search='';assert.equal((await handleCurrentStorms(new Request(u,{method:'POST'}),ctx,u)).status,405)

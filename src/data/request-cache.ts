@@ -3,7 +3,8 @@ type Entry = { promise: Promise<unknown>; controller: AbortController; users: nu
 const caches = new WeakMap<typeof fetch, Map<string, Entry>>()
 function keyFor(url: string) {
   const value = new URL(url, 'https://forecast.invalid')
-  if (value.origin !== 'https://forecast.invalid' || !/^\/api\/(wnc2|wm6|wmc|model-tracks|current-storms|intensity-aids)(?:\/|$)/.test(value.pathname)) throw new Error('Only same-origin public forecast JSON may be cached')
+  if (!value.search && ((value.origin === 'https://raw.githubusercontent.com' && /^\/BunnHack\/bunn-ens\/ensemble-track-data\/(?:GEFS|AIGEFS)(?:-20\d{6}T(?:00|06|12|18)0000Z)?\.json$/.test(value.pathname)) || (value.origin === 'https://bunnhack.github.io' && value.pathname === '/bunn-ens/ncep-ensembles/index.json'))) return value.href
+  if (value.origin !== 'https://forecast.invalid' || !/^\/api\/(wnc2|wm6|wmc|model-tracks|current-storms|intensity-aids)(?:\/|$)/.test(value.pathname)) throw new Error('Only approved public forecast JSON may be cached')
   value.searchParams.sort(); return value.pathname + value.search
 }
 export function clearRequestCache(fetcher: typeof fetch = fetch, prefix = '') {
@@ -25,7 +26,7 @@ export function cachedJson<T>(url: string, signal?: AbortSignal, fetcher: typeof
     const created = entry, owner = cache
     created.promise = (async () => {
       try {
-        const response = await fetcher(url, { signal: controller.signal })
+        const response = await fetcher(url, { signal: controller.signal, credentials: 'omit', redirect: 'error' })
         if (!response.ok) throw new Error(`Forecast API returned HTTP ${response.status}`)
         const data: unknown = await response.json()
         controller.signal.throwIfAborted()

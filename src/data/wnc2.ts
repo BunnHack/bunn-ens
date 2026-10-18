@@ -2,7 +2,7 @@ import { cachedJson } from './request-cache.ts'
 
 export type Cycle = '00z' | '06z' | '12z' | '18z'
 export type Model = 'FNV3P1' | 'FNV3P2' | 'WNV3' | 'OPER'
-export type TrackPoint = { sample: number; trackId: string; initTime: string; validTime: string; leadHours: number; lat: number; lon: number; wind: number; pressure: number | null }
+export type TrackPoint = { sample: number; trackId: string; initTime: string; validTime: string; leadHours: number; lat: number; lon: number; wind: number; pressure: number | null; sourceId?:string; nativeMember?:string; sourceKind?:'matched'|'genesis'|'derived_low'; fieldWindMs?:number|null }
 export type EnsembleMember = { sample: number; points: TrackPoint[]; maxWind: number }
 export type MeanPoint = { leadHours: number; lat: number; lon: number; wind: number; count: number }
 export type EnsembleData = { members: EnsembleMember[]; mean: MeanPoint[]; initTime: string; trackId: string }

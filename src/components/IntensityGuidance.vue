@@ -5,11 +5,13 @@ import IntensityPlot from './IntensityPlot.vue'
 import { loadPotential, type PotentialModel, type PotentialResult } from '../data/potential'
 import { loadWm6, type Wm6Response } from '../data/wm6'
 import { intensityModels, loadWm6Intensity, matchedCyclone, memberIntensity, providerIntensity, type IntensityMetric } from '../data/intensity'
-import { aiModels, associateAi, loadAi, type AiResult } from '../data/wmc'
+import { aiModels, loadAi, type AiResult } from '../data/wmc'
+import { associateAiSources } from '../data/source-association'
 import { extraModels, extraAssociation, loadModelTracks, type ModelTracks } from '../data/model-tracks'
 import { aiIntensity, extraIntensity, guidanceCsv, type GuidanceSeries } from '../data/intensity-sources'
 import { aidIntensity, loadIntensityAids, supportsIntensityAids, type IntensityAids } from '../data/intensity-aids'
 import { clearRequestCache } from '../data/request-cache'
+import { cycloneLabel } from '../data/cyclone-label'
 const props=withDefaults(defineProps<{active?:boolean}>(),{active:true})
 const results=shallowRef<Partial<Record<PotentialModel,PotentialResult>>>({}),wm6List=shallowRef<Wm6Response|null>(null),catalog=shallowRef<AiResult>(),aiResults=shallowRef<Record<string,AiResult>>({}),extras=shallowRef<ModelTracks>(),aids=shallowRef<Record<string,IntensityAids>>({})
 const storm=ref('WP292026'),metric=ref<IntensityMetric>('wind'),enabled=ref<string[]>([...intensityModels.map(m=>m.id),...aiModels.map(m=>m.id),...extraModels.map(m=>m.id)]),showProvider=ref(false)
@@ -24,12 +26,12 @@ const choices=computed(()=>{
  const values=new Map<string,Set<string>>()
  for(const model of intensityModels){const ids=model.id==='wm6'?Object.keys(wm6List.value?.tropical_cyclones??{}):[...new Set(results.value[model.id]?.catalog.points.map(p=>p.trackId)??[])];for(const id of ids.filter(matchedCyclone)){const sources=values.get(id)??new Set<string>();sources.add(model.label);values.set(id,sources)}}
  for(const id of requestedNHC.value){const sources=values.get(id)||new Set<string>();sources.add(aids.value[id]?'NHC已验证归档':'NHC查询ID／待归档验证');values.set(id,sources)}
- return [...values].sort(([a],[b])=>a.localeCompare(b)).map(([id,sources])=>({id,label:`${id} · ${[...sources].join(' / ')}`}))
+ return [...values].sort(([a],[b])=>a.localeCompare(b)).map(([id,sources])=>({id,label:`${cycloneLabel(id)} · ${[...sources].join(' / ')}`}))
 })
 const aiChoices=computed(()=>[...new Set(catalog.value?.tracks.map(t=>t.code)??[])].map(code=>({code,name:catalog.value!.tracks.find(t=>t.code===code)!.name})))
 const extraChoices=computed(()=>[...new Set(extras.value?.tracks.map(t=>t.systemId)??[])].map(id=>({id,name:extras.value!.tracks.find(t=>t.systemId===id)!.name})))
 const independent=computed(()=>storm.value.startsWith('wmc:')||storm.value.startsWith('extra:'))
-const association=computed(()=>independent.value?null:associateAi(catalog.value,results.value.wm6,storm.value))
+const association=computed(()=>independent.value?null:associateAiSources(catalog.value,results.value,storm.value))
 const aiCode=computed(()=>storm.value.startsWith('wmc:')?storm.value.slice(4):association.value?.code??'')
 const aiResult=computed(()=>aiResults.value[aiCode.value])
 const extraTracks=computed(()=>extras.value?.tracks.filter(t=>storm.value.startsWith('extra:')?t.systemId===storm.value.slice(6):!!aiCode.value&&extraAssociation(t,catalog.value)?.code===aiCode.value)??[])
@@ -83,7 +85,7 @@ async function refresh(){
  if(loading.value||!props.active)return
  const token=++revision;controller?.abort();const active=new AbortController();controller=active;loading.value=true;lastAttempt=Date.now()
  try{await Promise.all([
-  ...(['wn2','wn3','genc'] as const).map(async model=>{errors.value[model]='';try{const result=await loadPotential(model,'latest',active.signal);if(!active.signal.aborted&&token===revision){if(result.source==='snapshot'&&results.value[model]?.source==='remote')errors.value[model]=result.warning??'仅收到旧备份，保留先前来源。';else results.value={...results.value,[model]:result}}}catch(cause){if(!active.signal.aborted&&token===revision)errors.value[model]=cause instanceof Error?cause.message:String(cause)}}),
+  ...(['wn2','wn3','genc','gefs','aigefs'] as const).map(async model=>{errors.value[model]='';try{const result=await loadPotential(model,'latest',active.signal);if(!active.signal.aborted&&token===revision){if(result.source==='snapshot'&&results.value[model]?.source==='remote')errors.value[model]=result.warning??'仅收到旧备份，保留先前来源。';else results.value={...results.value,[model]:result}}}catch(cause){if(!active.signal.aborted&&token===revision)errors.value[model]=cause instanceof Error?cause.message:String(cause)}}),
   (async()=>{wm6ListError.value='';try{const list=await loadWm6({initialization_time:'latest',include_details:true,include_unofficial_ids:false,format:'json'},active.signal) as Wm6Response;if(!active.signal.aborted&&token===revision)wm6List.value=list}catch(cause){if(!active.signal.aborted&&token===revision)wm6ListError.value=cause instanceof Error?cause.message:String(cause)}})(),
   (async()=>{catalogError.value='';try{const result=await loadAi(undefined,active.signal);if(!active.signal.aborted&&token===revision)catalog.value=result}catch(cause){if(!active.signal.aborted&&token===revision)catalogError.value=cause instanceof Error?cause.message:String(cause)}})(),
   (async()=>{extraError.value='';try{const result=await loadModelTracks(active.signal);if(!active.signal.aborted&&token===revision)extras.value=result}catch(cause){if(!active.signal.aborted&&token===revision)extraError.value=cause instanceof Error?cause.message:String(cause)}})(),
@@ -91,7 +93,7 @@ async function refresh(){
  if(!active.signal.aborted&&token===revision){dataRevision.value++;if(!independent.value&&!choices.value.some(c=>c.id===storm.value))storm.value=choices.value.find(c=>c.id==='WP292026')?.id??choices.value[0]?.id??(aiChoices.value[0]?`wmc:${aiChoices.value[0].code}`:extraChoices.value[0]?`extra:${extraChoices.value[0].id}`:'');await nextTick();if(!detailLoading.value&&!independent.value&&wm6List.value&&lastDetailKey!==storm.value+'|'+wm6List.value.initialization_time)void loadSelectedWm6();await Promise.all([loadSelectedAi(),loadSelectedAids()])}
  }finally{if(token===revision)loading.value=false}
 }
-function reload(){for(const path of ['/api/wnc2','/api/wm6','/api/wmc','/api/model-tracks','/api/intensity-aids'])clearRequestCache(fetch,path);if(aiCode.value)aiLoaded[aiCode.value]=0;aidAttempt[storm.value]=0;void refresh()}
+function reload(){for(const path of ['/api/wnc2','/api/wm6','/api/wmc','/api/model-tracks','/api/intensity-aids','https://raw.githubusercontent.com/BunnHack/bunn-ens/ensemble-track-data/'])clearRequestCache(fetch,path);if(aiCode.value)aiLoaded[aiCode.value]=0;aidAttempt[storm.value]=0;void refresh()}
 function downloadCsv(){exportError.value='';try{const url=URL.createObjectURL(new Blob([guidanceCsv(plotted.value)],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=filename.value+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch{exportError.value='无法下载 CSV，请重试。'}}
 watch([storm,wm6List],()=>{++detailRevision;detailController?.abort();detailLoading.value=false;if(!independent.value)void loadSelectedWm6()})
 watch(aiCode,(code,old)=>{if(old&&aiLoading.value)aiLoaded[old]=0;++aiRevision;aiController?.abort();aiLoading.value=false;aiError.value='';if(code)void loadSelectedAi()})

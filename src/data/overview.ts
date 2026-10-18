@@ -7,6 +7,8 @@ export const overviewModels = [
   { id: 'wn2', label: 'WN2C(M)', color: '#9c6acc' },
   { id: 'wm6', label: 'WM-6(M)', color: '#008d70' },
   { id: 'genc', label: 'GENC(M)', color: '#168bef' },
+  { id: 'gefs', label: 'GEFS(M)', color: '#bb701a' },
+  { id: 'aigefs', label: 'AIGEFS(M)', color: '#256b97' },
 ] as const
 export type OverviewPoint = { lat: number; lon: number; leadHours: number; count?: number; windMs?: number | null; pressureHpa?: number | null; validTime?: string }
 export type OverviewTrack = { model: PotentialModel | AiModel | import('./model-tracks').ExtraModel; label: string; color: string; initialization: string; forecastZero: string; source: 'remote' | 'snapshot'; points: OverviewPoint[]; kind?: 'ensemble' | 'single' | 'derived'; identity?: string; initializationLabel?: string; baseLabel?: string; provenance?: string }
@@ -30,12 +32,12 @@ export function overviewTracks(results: Partial<Record<PotentialModel, Potential
   if(!rows.length)return {base:'',tracks:[]}
   const anchor=Math.min(...rows.map(row=>Date.parse(row.forecastZero)))
   // Labels use one common UTC anchor, never equal +h from different model bases.
-  return {base:new Date(anchor).toISOString(),tracks:rows.map(row=>({...row,points:row.points.map(p=>({...p,leadHours:p.leadHours+(Date.parse(row.forecastZero)-anchor)/3600000})).filter(p=>p.leadHours>=0&&p.leadHours<=312)}))}
+  return {base:new Date(anchor).toISOString(),tracks:rows.map(row=>({...row,points:row.points.map(p=>({...p,leadHours:p.leadHours+(Date.parse(row.forecastZero)-anchor)/3600000})).filter(p=>p.leadHours>=0)}))}
 }
 export function addAiTracks(existing: {base:string;tracks:OverviewTrack[]}, ai: AiTrack[], identity: string): {base:string;tracks:OverviewTrack[]} {
   if (!ai.length) return existing
   const anchor = Math.min(...ai.map(t=>Date.parse(t.forecastZero)), ...(existing.base?[Date.parse(existing.base)]:[]))
   const means = existing.tracks.map(t=>({...t,points:t.points.map(p=>({...p,leadHours:p.leadHours+(Date.parse(existing.base)-anchor)/3600000}))}))
   const singles: OverviewTrack[] = ai.map(t=>({ model:t.model,label:aiModels.find(m=>m.id===t.model)!.label,color:aiModels.find(m=>m.id===t.model)!.color,initialization:t.forecastZero,forecastZero:t.forecastZero,source:'remote',kind:'single',identity:`WMC ${t.code} ${t.name} · ${identity}`,points:t.points.map(p=>({...p,leadHours:(Date.parse(p.validTime)-anchor)/3600000})) }))
-  return {base:new Date(anchor).toISOString(),tracks:[...means,...singles].map(t=>({...t,points:t.points.filter(p=>p.leadHours>=0&&p.leadHours<=312)})).filter(t=>t.points.length>0)}
+  return {base:new Date(anchor).toISOString(),tracks:[...means,...singles].map(t=>({...t,points:t.points.filter(p=>p.leadHours>=0)})).filter(t=>t.points.length>0)}
 }

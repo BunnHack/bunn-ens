@@ -5,6 +5,7 @@ import { REFRESH_MS } from '../data/wnc2'
 import { basinCsv, basinRegions, pointInRegion, type MapTheme } from '../data/basin'
 import { cycloneCatalog, cycloneChoices, cycloneMean, cycloneRegion, isUnmatchedWm6Id, loadPotential, potentialModels, type PotentialModel, type PotentialResult } from '../data/potential'
 import BasinPlot from './BasinPlot.vue'
+import NcepPublishedCharts from './NcepPublishedCharts.vue'
 import Wm6DataAudit from './Wm6DataAudit.vue'
 import ChartFrame from './ChartFrame.vue'
 import { focusedProbabilityRegion, passageField, type ProbabilityField } from '../data/probability'
@@ -25,6 +26,7 @@ const result = ref<PotentialResult | null>(null)
 const loading = ref(false)
 const error = ref('')
 const showInfo = ref(false)
+const nativeModel = computed(() => model.value === 'gefs' || model.value === 'aigefs' ? model.value : undefined)
 const supported = computed(() => ['wn3', 'wn2', 'wm6', 'genc'].includes(model.value))
 const title = computed(() => props.mode === 'basin' ? '洋區系集預報' : '台風潛勢預報')
 const region = computed(() => basinRegions.find(item => item.id === regionId.value)!)
@@ -108,9 +110,9 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
 </script>
 
 <template>
-  <section class="basin-viewer" :data-theme="theme" :aria-label="zhHans(title)">
-    <div class="basin-top"><a href="#weather-tools">← Weather Tools</a><h1 tabindex="-1">{{ zhHans(title) }}</h1><span>实际系集路径 · 0–312h</span></div>
-    <div class="basin-layout">
+  <section class="basin-viewer" :data-theme="theme" :data-mode="mode" :aria-label="zhHans(title)">
+    <div class="basin-top"><a href="#weather-tools">← Weather Tools</a><h1 tabindex="-1">{{ zhHans(title) }}</h1><span>实际系集路径 · 0–{{ nativeModel==='gefs'?120:nativeModel==='aigefs'?240:312 }}h</span></div>
+    <div class="basin-layout" :class="{'ncep-layout':nativeModel}">
       <aside class="basin-sidebar basin-panel" aria-label="台风预报模式选单">
         <h2>台风预报</h2>
         <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ zhHans(section) }}</summary><template v-if="zhHans(section) === '主要模式预报'"><p><a href="#weather-tools/overview">预报洋区总览 →</a></p><p><a href="#weather-tools/extended">中远期袭击潜势 →</a></p><p><a href="#forecast-models">WM-6 全球格点预报 →</a></p></template><p v-else>此分类产品尚未接入。</p></details>
@@ -122,7 +124,8 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
       </aside>
 
       <div class="basin-chart-panel basin-panel">
-        <p v-if="loading" class="basin-status" role="status">正在载入 {{ zhHans(selectedModel.label) }} 所选时次与成员路径…</p>
+        <NcepPublishedCharts v-if="nativeModel" :key="nativeModel" :model="nativeModel" :mode="mode" :active="active"/>
+        <p v-else-if="loading" class="basin-status" role="status">正在载入 {{ zhHans(selectedModel.label) }} 所选时次与成员路径…</p>
         <div v-else-if="error" class="basin-error" role="alert"><h2>无法载入此时次</h2><p>{{ zhHans(error) }}</p><button @click="refresh">重试</button></div>
         <div v-else-if="!supported" class="basin-empty"><h2>{{ zhHans(selectedModel.label) }} 尚未接入</h2><p>不会以其他模式或旧图片代替。</p><button @click="chooseModel('wn3')">查看 WNC3 预报</button></div>
         <div v-else-if="mode === 'typhoon' && ['sst', 'heat'].includes(forecastType)" class="basin-empty"><h2>{{ zhHans(products.find(item => item.id === forecastType)?.label) }} 尚未接入</h2><p>目前资料源不含海温或海洋热焓场，不以风速或气压替代。</p><button @click="forecastType = 'ensemble'">返回系集预报</button></div>
@@ -139,7 +142,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
         </template>
       </div>
 
-      <aside class="basin-controls basin-panel" aria-label="预报控制台">
+      <aside v-if="!nativeModel" class="basin-controls basin-panel" aria-label="预报控制台">
         <h2>控制台</h2>
         <button v-if="mode === 'basin'" class="basin-csv" :disabled="!supported || loading || !visiblePoints.length" @click="downloadCsv">下载目前洋区CSV文件</button>
         <label class="basin-run">起报时间<select v-model="runChoice" :disabled="!supported" aria-label="洋区起报时间"><option value="latest">最新已发布时次 (UTC)</option><option v-for="run in availableRuns" :key="run.value" :value="run.value">{{ zhHans(run.label) }}</option></select></label>
@@ -187,4 +190,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
 .potential-storms .basin-buttons { display: flex; flex-wrap: wrap; }.potential-storms button { border-color: #4a91e3; color: #4a91e3; border-radius: 15px; padding: 10px; }.potential-export { margin-top: 18px; }.basin-run select { min-width: 0; text-overflow: ellipsis; }.basin-current p { overflow-wrap: anywhere; }
 .wm6-unofficial-toggle { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.7; margin-top: 18px; }.wm6-unofficial-toggle input { flex: 0 0 auto; margin-top: 4px; }
 .probability-window { display: block; font-size: 12px; margin-top: 18px; line-height: 1.8; }.probability-window input { display: block; width: 100%; }
+.basin-layout.ncep-layout{grid-template-columns:220px minmax(0,1fr)}.ncep-layout .ncep-published{width:100%}
+.basin-viewer[data-mode="typhoon"] :deep(.chart-frame:not(.chart-frame-enlarged) .chart-viewport:not(.chart-draggable) .chart-canvas>svg){max-height:520px}
+@media(max-width:700px){.basin-layout.ncep-layout{grid-template-columns:minmax(0,1fr)}}
 </style>

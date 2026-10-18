@@ -9,6 +9,8 @@ export const intensityModels = [
   { id: 'wn3', label: 'WNC3', color: '#0072b2', source: 'WeatherNext · WNV3' },
   { id: 'wm6', label: 'WM-6', color: '#009773', source: 'WindBorne cyclone tracker' },
   { id: 'genc', label: 'GENC', color: '#ad4ea7', source: 'WeatherNext · OPER' },
+  { id: 'gefs', label: 'GEFS', color: '#bb701a', source: 'NOAA/NCEP · 31 members · 0–120h · native kt/hPa' },
+  { id: 'aigefs', label: 'AIGEFS', color: '#256b97', source: 'NOAA/NCEP · 31 members · 0–240h · native tracker kt/hPa (not field speed)' },
 ] as const
 export const matchedCyclone = (id: string) => /^[A-Z]{2}\d{6}$/.test(id)
 export function forecastEpoch(raw: string): number {

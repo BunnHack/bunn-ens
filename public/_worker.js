@@ -297,25 +297,32 @@ export async function handleModelTracks(request, ctx, url) {
 }
 
 const ZOOM_ID = /^[a-z0-9][a-z0-9-]{0,39}-20\d{2}$/;
+function zoomGeometry(value, limit) {
+  if (!Array.isArray(value) || value.length > limit) throw new Error('Invalid source geometry');
+  return value.map(p => { if (!Array.isArray(p) || p.length !== 2 || !p.every(Number.isFinite) || Math.abs(p[0]) > 180 || Math.abs(p[1]) > 90) throw new Error('Invalid source geometry coordinate'); return [p[0],p[1]]; });
+}
 function zoomProjection(root, id) {
   const pick = (obj, fields) => Object.fromEntries(fields.filter(k => obj?.[k] !== undefined).map(k => [k, obj[k]]));
   if (!root || root.id !== id || typeof root.active !== 'boolean' || !Array.isArray(root.track) || !root.track.length || root.track.length > 600) throw new Error('Invalid source storm');
   const data = pick(root, ['id','name','title','description','season','type','active','invest','disturbance','centroid','agencies','place','chance','chance2day','chance7day']);
   for (const name of ['id','name','title','description','season','type','agencies','place','chance']) if (data[name] !== undefined && (typeof data[name] !== 'string' || data[name].length > 400)) throw new Error('Invalid source label');
+  if (root.cone !== undefined) data.cone = zoomGeometry(root.cone, 1000);
   data.track = root.track.map(p => {
     if (!p || typeof p.date !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(p.date) || !Number.isFinite(Date.parse(p.date)) || new Date(p.date).toISOString().replace('.000Z','Z') !== p.date || !Array.isArray(p.coordinates) || p.coordinates.length !== 2 || typeof p.forecast !== 'boolean') throw new Error('Invalid source fix');
     const [lon,lat] = p.coordinates;
     if (!Number.isFinite(lon) || !Number.isFinite(lat) || lon < -180 || lon > 180 || lat < -90 || lat > 90) throw new Error('Invalid source coordinate');
     for (const [key,min,max] of [['wind',0,250],['pressure',800,1100],['rank',-5,10]]) if (p[key] != null && (!Number.isFinite(p[key]) || p[key] < min || p[key] > max)) throw new Error('Invalid source value');
     for (const key of ['description','basin','code']) if (p[key] !== undefined && (typeof p[key] !== 'string' || p[key].length > 200)) throw new Error('Invalid source fix label');
-    return pick(p, ['date','coordinates','wind','pressure','basin','forecast','rank','code','description']);
+    const projected = pick(p, ['date','coordinates','wind','pressure','basin','forecast','rank','code','description']);
+    if (p.spline !== undefined) projected.spline = zoomGeometry(p.spline, 200);
+    return projected;
   });
   return data;
 }
 export async function handleCurrentStorms(request, ctx, url) {
   if (request.method !== 'GET') return jsonError('GET required', 405);
   if (url.search) return jsonError('Current storms do not accept query parameters', 400);
-  const key = new Request(new URL('/_internal/current-storms-v1', request.url));
+  const key = new Request(new URL('/_internal/current-storms-v2-geometry', request.url));
   const cache = globalThis.caches?.default;
   const cached = cache && await cache.match(key);
   if (cached) return new Response(cached.body, { headers: responseHeaders() });

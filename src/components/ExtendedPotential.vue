@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { zhHans } from '../data/zh-hans'
 import BasinPlot from './BasinPlot.vue'
+import NcepPublishedCharts from './NcepPublishedCharts.vue'
 import ChartFrame from './ChartFrame.vue'
 import { basinCsv, basinRegions, pointInRegion, type BasinRegion, type MapTheme } from '../data/basin'
 import { cycloneCatalog, cycloneChoices, cycloneMean, loadPotential, potentialModels, type PotentialModel, type PotentialResult } from '../data/potential'
@@ -13,7 +14,7 @@ import { focusTrackRegion } from '../data/overview'
 import { clearRequestCache } from '../data/request-cache'
 
 const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
-const models = potentialModels.filter(item => ['wn2','wn3','wm6','genc'].includes(item.id)).map(item => ({ ...item, id: item.id as PotentialModel, source: item.id === 'wm6' ? 'WindBorne WM-6 API' : `Google Weather Lab · ${item.id === 'genc' ? 'OPER' : item.id === 'wn3' ? 'WNV3' : 'FNV3P1'}` }))
+const models = potentialModels.filter(item => ['wn2','wn3','wm6','genc','gefs','aigefs'].includes(item.id)).map(item => ({ ...item, id: item.id as PotentialModel, source: item.id === 'gefs'||item.id === 'aigefs' ? 'NOAA/NCEP · 31成员 · workflow图／紧凑JSON' : item.id === 'wm6' ? 'WindBorne WM-6 API' : `Google Weather Lab · ${item.id === 'genc' ? 'OPER' : item.id === 'wn3' ? 'WNV3' : 'FNV3P1'}` }))
 const model = ref<PotentialModel>('wn2'), run = ref('latest'), storm = ref('all')
 const start = ref(120), end = ref(312), product = ref<'ensemble' | 'probability'>('ensemble')
 const theme = ref<MapTheme>('light'), showInfo = ref(false), showHours = ref(true), groupCandidates = ref(true)
@@ -83,7 +84,7 @@ async function refresh() {
   } catch (cause) { if (!signal.aborted && token === revision) error.value = cause instanceof Error ? cause.message : String(cause) }
   finally { if (token === revision) loading.value = false }
 }
-function reload() { clearRequestCache(fetch, model.value === 'wm6' ? '/api/wm6' : '/api/wnc2'); refresh() }
+function reload() { clearRequestCache(fetch, model.value==='gefs'||model.value==='aigefs'?'https://raw.githubusercontent.com/BunnHack/bunn-ens/ensemble-track-data/':model.value === 'wm6' ? '/api/wm6' : '/api/wnc2'); refresh() }
 function downloadCsv() {
   if (!catalog.value) return
   const url = URL.createObjectURL(new Blob([basinCsv(visible.value)], { type: 'text/csv;charset=utf-8' }))
@@ -112,7 +113,8 @@ onBeforeUnmount(() => { ++revision; controller?.abort() })
         <p v-if="result?.warning" class="ep-status ep-warning">{{ zhHans(result.warning) }}</p>
         <p v-if="result?.source==='snapshot'" class="ep-status ep-warning">有日期的本地备份，未确认最新。</p>
         <p v-if="probability.error" class="ep-status ep-warning">{{ zhHans(probability.error) }} 不以空白或100%代替。</p>
-        <ChartFrame v-if="result&&catalog&&active&&!probability.error" :filename="filename" :title="zhHans(`${modelInfo.label} ${title} ${windowLabel}`)"><BasinPlot :catalog="catalog" :region="mapRegion" :theme="theme" :model-label="modelInfo.label" :wind-mode="product==='ensemble'" :storm="storm==='all'?'All independent tracks':selectedChoice?.label??storm" :mean="mean" :mean-label="meanLabel" :association="association" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product==='ensemble'&&showHours" :time-anchor="result.wm6?.forecastZero??''"/></ChartFrame>
+        <NcepPublishedCharts v-if="(model==='gefs'||model==='aigefs')&&product==='ensemble'" :key="model" :model="model" :active="active"/>
+        <ChartFrame v-else-if="result&&catalog&&active&&!probability.error" :filename="filename" :title="zhHans(`${modelInfo.label} ${title} ${windowLabel}`)"><BasinPlot :catalog="catalog" :region="mapRegion" :theme="theme" :model-label="modelInfo.label" :wind-mode="product==='ensemble'" :storm="storm==='all'?'All independent tracks':selectedChoice?.label??storm" :mean="mean" :mean-label="meanLabel" :association="association" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product==='ensemble'&&showHours" :time-anchor="result.wm6?.forecastZero??''"/></ChartFrame>
         <p v-if="result" class="ep-provenance">{{ zhHans(result.wm6?'供应商版本':'模型起报') }} {{ zhHans(result.catalog.initTime) }} UTC<span v-if="result.wm6"> · 预报基准 {{ zhHans(result.wm6.forecastZero) }}</span><span v-if="focusStorm&&storm!=='all'"> · 已聚焦系统均线，外围成员可能超出图域。</span></p>
         <p v-if="selectedGroup" class="ep-cluster-note">本站 G 为非官方几何分群；均线只代表入群成员的条件平均，不是全系集共识。</p>
         <details class="ep-method" :open="showInfo"><summary>来源、分群及概率计算说明</summary>

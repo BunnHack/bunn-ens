@@ -1,7 +1,8 @@
 import { cachedJson, forgetRequest } from './request-cache'
 export const ZOOM_SOURCE = 'https://zoom.earth/'
-export type StormFix = { date: string; lat: number; lon: number; wind: number | null; pressure: number | null; basin: string; forecast: boolean; rank: number; code: string; description: string }
-export type CurrentStorm = { id: string; name: string; title: string; description: string; season: string; active: boolean; invest: boolean; disturbance: boolean; centroid: boolean; agencies: string; place: string; chance: string; chance2day: number | null; chance7day: number | null; track: StormFix[] }
+export type SourceGeometry = [number,number][]
+export type StormFix = { date: string; lat: number; lon: number; wind: number | null; pressure: number | null; basin: string; forecast: boolean; rank: number; code: string; description: string; spline?: SourceGeometry }
+export type CurrentStorm = { id: string; name: string; title: string; description: string; season: string; active: boolean; invest: boolean; disturbance: boolean; centroid: boolean; agencies: string; place: string; chance: string; chance2day: number | null; chance7day: number | null; track: StormFix[]; cone?: SourceGeometry }
 export type StormEntry = { id: string; kind: 'storm' | 'disturbance'; data: CurrentStorm | null; checkedAt: string; error: string; retained?: boolean }
 export type CurrentStorms = { source: typeof ZOOM_SOURCE; providerTime: string; catalogDate: string; checkedAt: string; entries: StormEntry[] }
 const object = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -9,6 +10,11 @@ export const zoomStormId = (v: unknown): v is string => typeof v === 'string' &&
 export function stormUtc(v: unknown): v is string { return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().replace('.000Z','Z') === v }
 const text = (v: unknown, limit = 200) => typeof v === 'string' ? v.slice(0,limit) : ''
 function scalar(v: unknown, min: number, max: number) { if(v === null || v === undefined) return null; if(typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) throw new Error('气旋原始数值无效'); return v }
+export function sourceGeometry(v:unknown,limit:number):SourceGeometry|undefined {
+ if(v===undefined)return undefined
+ if(!Array.isArray(v)||v.length>limit)throw Error('来源几何无效')
+ return v.map(p=>{if(!Array.isArray(p)||p.length!==2||!p.every(n=>typeof n==='number'&&Number.isFinite(n))||Math.abs(p[0])>180||Math.abs(p[1])>90)throw Error('来源几何坐标无效');return [p[0],p[1]]})
+}
 export function parseZoomStorm(v: unknown, id: string): CurrentStorm {
   if(!object(v) || v.id !== id || !zoomStormId(id) || typeof v.active !== 'boolean' || !Array.isArray(v.track) || !v.track.length || v.track.length > 600) throw new Error('气旋来源身份／路径无效')
   const seen = new Map<string,StormFix>(), track: StormFix[] = []
@@ -17,12 +23,13 @@ export function parseZoomStorm(v: unknown, id: string): CurrentStorm {
     const lon=scalar(p.coordinates[0],-180,180),lat=scalar(p.coordinates[1],-90,90)
     if(lon===null||lat===null)throw new Error('气旋缺少坐标')
     const fix:StormFix={date:p.date,lat,lon,wind:scalar(p.wind,0,250),pressure:scalar(p.pressure,800,1100),basin:text(p.basin,8),forecast:p.forecast,rank:scalar(p.rank,-5,10)??-3,code:text(p.code,12),description:text(p.description)}
+    if(p.spline!==undefined)fix.spline=sourceGeometry(p.spline,200)
     const previous=seen.get(fix.date)
     if(previous){if(JSON.stringify(previous)!==JSON.stringify(fix))throw new Error('同一UTC路径点冲突');continue}
     seen.set(fix.date,fix);track.push(fix)
   }
   track.sort((a,b)=>Date.parse(a.date)-Date.parse(b.date))
-  return {id,name:text(v.name,80),title:text(v.title),description:text(v.description),season:text(v.season,12),active:v.active,invest:v.invest===true,disturbance:v.disturbance===true,centroid:v.centroid===true,agencies:text(v.agencies,100),place:text(v.place),chance:text(v.chance,20),chance2day:scalar(v.chance2day,0,100),chance7day:scalar(v.chance7day,0,100),track}
+  return {id,name:text(v.name,80),title:text(v.title),description:text(v.description),season:text(v.season,12),active:v.active,invest:v.invest===true,disturbance:v.disturbance===true,centroid:v.centroid===true,agencies:text(v.agencies,100),place:text(v.place),chance:text(v.chance,20),chance2day:scalar(v.chance2day,0,100),chance7day:scalar(v.chance7day,0,100),track,...(v.cone!==undefined?{cone:sourceGeometry(v.cone,1000)}:{})}
 }
 export function parseCurrentStorms(v: unknown): CurrentStorms {
   if(!object(v)||v.schema!==1||v.source!==ZOOM_SOURCE||v.windUnit!=='kt'||v.pressureUnit!=='hPa'||!stormUtc(v.providerTime)||!stormUtc(v.checkedAt)||typeof v.catalogDate!=='string'||!/^\d{4}-\d\d-\d\dT(?:00|06|12|18):00Z$/.test(v.catalogDate)||Date.parse(v.catalogDate)!==Math.floor(Date.parse(v.providerTime)/21600000)*21600000||!Array.isArray(v.entries)||v.entries.length>20)throw new Error('即时气旋清单／来源时间无效')
