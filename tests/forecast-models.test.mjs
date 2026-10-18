@@ -52,7 +52,7 @@ await test('Screenshot-style viewer switches products, runs, regions and actual 
  const app=createApp(Panel);app.mount('#app');await settle()
  try{
   assert.equal(document.querySelectorAll('.fm-tabs button').length,5);assert.equal(document.querySelectorAll('.fm-tabs button:disabled').length,4)
-  assert.equal(document.querySelectorAll('[aria-label="Forecast variable category"] option').length,4)
+  assert.equal(document.querySelectorAll('[aria-label="Forecast variable category"] option').length,9)
   assert.equal(document.querySelectorAll('.fm-hour-grid button').length,53)
   assert.ok(document.querySelector('[aria-label="Forecast hour 0"]').disabled);assert.ok(document.querySelector('[aria-label="Forecast hour 312"]').disabled)
   assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,/20261017T0300Z\/east-asia\/precip\/012.png$/)
@@ -105,6 +105,7 @@ await test('Forecast Models is an internal deep link and returning to storms pre
  t.mock.method(globalThis,'fetch',async url=>String(url).startsWith(data.FORECAST_BASE)?Response.json(fixture()):String(url).startsWith('/api/wnc2')?Response.json({csv,run:{model:'FNV3P1',date:'2026-10-13',cycle:'00z'},checkedAt:'2026-10-17T04:00:00Z'}):new Response('',{status:502}))
  const app=createApp(App);app.mount('#app');await settle()
  try{
+  document.querySelector('.current-native-guidance').open=true;document.querySelector('.current-native-guidance').dispatchEvent(new dom.window.Event('toggle'));await settle();
   const lead=document.querySelector('[aria-label="Maximum forecast lead hours"]');lead.value='120';lead.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await settle()
   const link=[...document.querySelectorAll('.main-navigation a')].find(a=>a.textContent==='Forecast Models');assert.equal(link.getAttribute('href'),'#forecast-models');assert.equal(link.getAttribute('target'),null)
   window.location.hash='#forecast-models';await settle();assert.ok(document.querySelector('.fm-layout'));assert.equal(document.querySelector('.main-navigation [aria-current="page"]').textContent,'Forecast Models');assert.equal(document.querySelector('#main-content').style.display,'none');assert.equal(document.activeElement,document.querySelector('#forecast-models h1'))
@@ -115,5 +116,17 @@ await test('Actions limits credentials to generation and publishes only chart as
  const yaml=await readFile('.github/workflows/wm6-forecast-charts.yml','utf8')
  assert.match(yaml,/schedule:/);assert.match(yaml,/secrets.WM_API_KEY/);assert.match(yaml,/id-token: write/);assert.match(yaml,/actions\/deploy-pages@/);assert.match(yaml,/path: .generated-site\n/);assert.ok(!/secrets.GITHUB|ghp_|wb_[A-Za-z0-9_-]{20}/.test(yaml))
  const py=await readFile('scripts/wm6_forecast.py','utf8');assert.match(py,/ThreadPoolExecutor\(max_workers=6\)/);assert.match(py,/verify_metadata\(dataset.attrs, run, hour\)/);assert.match(py,/download_archive_fields/);assert.match(py,/API_INTERVAL.*'15'/);assert.match(yaml,/WM_API_INTERVAL_SECONDS: '15'/)
+})
+await test('Five added variables use distinct published assets only; older four-product manifests remain usable',async t=>{
+ const value=fixture(),added=['dewpoint','cape','tcwv','temperature850','wind250'],id=value.runs[0].id
+ for(const name of added)value.runs[0].frames[2].files['east-asia'][name]={png:`runs/${id}/east-asia/${name}/012.png`,svg:`runs/${id}/east-asia/${name}/012.svgz`}
+ const parsed=data.parseForecastManifest(value)
+ for(const name of added){assert.equal(data.availableForecastFrames(parsed.runs[0],'east-asia',name).length,1);assert.equal(data.availableForecastFrames(parsed.runs[1],'east-asia',name).length,0);assert.match(data.forecastAssetUrl(parsed.runs[0].frames[2].files['east-asia'][name].png),new RegExp('/'+name+'/012.png$'))}
+ const calls=[];t.mock.method(globalThis,'fetch',async url=>{calls.push(String(url));return String(url).startsWith(data.FORECAST_BASE)?Response.json(value):new Response('',{status:503})})
+ const app=createApp(Panel);app.mount('#app');await settle()
+ try{assert.equal(new Set([...document.querySelectorAll('[aria-label="Forecast variable category"] option')].map(x=>x.textContent)).size,9)
+ for(const name of added){await select('[aria-label="Forecast variable category"]',name);assert.match(new URL(document.querySelector('.fm-chart-image').src).pathname,new RegExp('/'+name+'/012.png$'));assert.match(document.querySelector('.fm-progress').textContent,/1\/53/)}
+ await select('[aria-label="Forecast initialization"]',value.runs[1].id);assert.equal(document.querySelector('.fm-chart-image'),null);assert.match(document.querySelector('.fm-empty').textContent,/不以其他模型/)
+ assert.ok(calls.every(url=>url.startsWith(data.FORECAST_BASE)||url==='/api/wm6/availability'))}finally{app.unmount()}
 })
 dom.window.close()

@@ -3,11 +3,13 @@ import vue from '@vitejs/plugin-vue'
 import { wnc2Proxy } from './server/wnc2-proxy.ts'
 import { wmcProxy } from './server/wmc-proxy.ts'
 import { modelTracksProxy } from './server/model-tracks-proxy.ts'
+import { currentStormsProxy } from './server/current-storms-proxy.ts'
+import { intensityAidsProxy } from './server/intensity-aids-proxy.ts'
 
 const weatherNextProxy: Plugin = {
   name: 'weathernext-csv-proxy',
-  configureServer(server) { server.middlewares.use(modelTracksProxy); server.middlewares.use(wmcProxy); server.middlewares.use(wnc2Proxy) },
-  configurePreviewServer(server) { server.middlewares.use(modelTracksProxy); server.middlewares.use(wmcProxy); server.middlewares.use(wnc2Proxy) },
+  configureServer(server) { server.middlewares.use(currentStormsProxy); server.middlewares.use(intensityAidsProxy); server.middlewares.use(modelTracksProxy); server.middlewares.use(wmcProxy); server.middlewares.use(wnc2Proxy) },
+  configurePreviewServer(server) { server.middlewares.use(currentStormsProxy); server.middlewares.use(intensityAidsProxy); server.middlewares.use(modelTracksProxy); server.middlewares.use(wmcProxy); server.middlewares.use(wnc2Proxy) },
 }
 
 export default defineConfig({

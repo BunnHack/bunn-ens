@@ -136,6 +136,14 @@ def request(session, path, params=None):
             if delay:
                 time.sleep(delay)
             response = session.get(API + path, params=params, timeout=(20, 120))
+            if response.status_code == 429 and len(response.content) <= 4096:
+                try:
+                    failure = response.json()
+                except ValueError:
+                    failure = {}
+                if isinstance(failure, dict) and failure.get('error') == 'Quota exceeded' and 'total requests' in str(failure.get('message', '')):
+                    response.close()
+                    raise RuntimeError('WM-6 account total request quota exhausted; restore authorized quota/key before generation. Existing publication is unchanged.')
             if response.status_code in (429, 500, 502, 503, 504) and attempt < 4:
                 try:
                     delay = float(response.headers.get('Retry-After', '30' if response.status_code == 429 else '5'))

@@ -1,199 +1,42 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import WeatherTools from './components/WeatherTools.vue'
+import ForecastModels from './components/ForecastModels.vue'
+import CurrentStorms from './components/CurrentStorms.vue'
+import IntensityGuidance from './components/IntensityGuidance.vue'
 import Wnc2Ensemble from './components/Wnc2Ensemble.vue'
 import Wm6Ensemble from './components/Wm6Ensemble.vue'
-import ForecastModels from './components/ForecastModels.vue'
-import IntensityGuidance from './components/IntensityGuidance.vue'
-
-type Cycle = '00z' | '06z' | '12z' | '18z'
-type Forecast = {
-  id: string
-  title: string
-  image?: string
-  description: string
-  cycle: Cycle
-}
-type ImagePreview = { title: string; image: string; description: string }
-
-const navigation = [
-  { label: 'Current Storms', href: 'https://www.tropicaltidbits.com/storminfo/' },
-  { label: 'Weather Tools', href: '#weather-tools' },
-  { label: 'Satellite Imagery', href: 'https://www.tropicaltidbits.com/sat/' },
-  { label: 'Forecast Models', href: '#forecast-models' },
-  { label: 'Analysis Tools', href: 'https://www.tropicaltidbits.com/analysis/' },
-  { label: 'About', href: 'https://www.tropicaltidbits.com/about.html' },
-]
-const cycles: Cycle[] = ['00z', '06z', '12z', '18z']
-const forecasts = ref<Forecast[]>([
-  { id: 'global', title: 'Global + Hurricane Models', image: '/images/global-models.png', description: 'Deterministic model track guidance', cycle: '06z' },
-  { id: 'wnc2', title: 'WNC2 Ensembles', description: 'WeatherNext 2 Cyclones · FNV3.2', cycle: '06z' },
-  { id: 'wm6', title: 'WM-6 Ensemble', image: '/images/eps-ensembles.png', description: 'WindBorne tropical cyclone ensemble tracker', cycle: '06z' },
-  { id: 'intensity', title: 'Intensity Guidance', description: 'WNC2 / WNC3 / WM-6 · ensemble-mean cyclone intensity', cycle: '00z' },
-])
-const stormDetails = [
-  { label: 'Location', value: '9.7°N 162.6°E' },
-  { label: 'Maximum Winds', value: '20 kt', detail: 'Gusts: N/A' },
-  { label: 'Minimum Central Pressure', value: '1008 mb' },
-  { label: 'Environmental Pressure', value: 'N/A' },
-  { label: 'Radius of Circulation', value: 'N/A' },
-  { label: 'Radius of Maximum Wind', value: 'N/A' },
-]
-const selectedStorm = ref('96W INVEST')
-const observation = ref('06:00–07:30 UTC · Oct 11, 2026')
-const informationOpen = ref(false)
-const settingsOpen = ref(false)
-const acronymsOpen = ref(false)
-const compact = ref(false)
-const preview = ref<ImagePreview | null>(null)
-const snackbar = ref('')
-let snackbarTimer: ReturnType<typeof setTimeout> | undefined
-const dialogOpen = computed(() => settingsOpen.value || acronymsOpen.value || preview.value !== null)
-
-function notify(message: string) {
-  clearTimeout(snackbarTimer)
-  snackbar.value = message
-  snackbarTimer = setTimeout(() => { snackbar.value = '' }, 6000)
-}
-function selectCycle(forecast: Forecast, cycle: Cycle) {
-  forecast.cycle = cycle
-  if (forecast.id !== 'wnc2') notify(`${forecast.title}: ${cycle} selected. Only the screenshot's 06z image is available; the reference image has not changed.`)
-}
-function openImage(title: string, image: string, description: string) {
-  preview.value = { title, image, description }
-}
-function closeDialogs() {
-  preview.value = null
-  settingsOpen.value = false
-  acronymsOpen.value = false
-}
-const currentHash = ref(window.location.hash)
-const weatherToolsOpen = computed(() => /^#weather-tools(?:\/|$)/.test(currentHash.value))
-const weatherToolsVisited = ref(weatherToolsOpen.value)
-const forecastModelsOpen = computed(() => currentHash.value === '#forecast-models')
-const forecastModelsVisited = ref(forecastModelsOpen.value)
-const weatherToolId = computed(() => currentHash.value.startsWith('#weather-tools/') ? currentHash.value.slice('#weather-tools/'.length) : undefined)
-async function onHashChange() {
-  currentHash.value = window.location.hash
-  if (weatherToolsOpen.value) weatherToolsVisited.value = true
-  if (forecastModelsOpen.value) forecastModelsVisited.value = true
-  closeDialogs()
-  await nextTick()
-  if (weatherToolsOpen.value) {
-    const heading = document.querySelector<HTMLElement>('#weather-tools h1')
-    heading?.focus({ preventScroll: true })
-    document.querySelector('#weather-tools')?.scrollIntoView?.({ block: 'start' })
-  } else if (forecastModelsOpen.value) {
-    document.querySelector<HTMLElement>('#forecast-models h1')?.focus({ preventScroll: true })
-    document.querySelector('#forecast-models')?.scrollIntoView?.({ block: 'start' })
-  } else if (currentHash.value === '#models-title') document.querySelector('#models-title')?.scrollIntoView?.({ block: 'start' })
-}
-onMounted(() => window.addEventListener('hashchange', onHashChange))
-onBeforeUnmount(() => { clearTimeout(snackbarTimer); window.removeEventListener('hashchange', onHashChange) })
+const currentHash=ref(window.location.hash)
+const weatherToolsOpen=computed(()=>/^#weather-tools(?:\/|$)/.test(currentHash.value))
+const forecastModelsOpen=computed(()=>currentHash.value==='#forecast-models')
+const currentOpen=computed(()=>!weatherToolsOpen.value&&!forecastModelsOpen.value)
+const weatherToolsVisited=ref(weatherToolsOpen.value),forecastModelsVisited=ref(forecastModelsOpen.value)
+const weatherToolId=computed(()=>currentHash.value.startsWith('#weather-tools/')?currentHash.value.slice('#weather-tools/'.length):undefined)
+const settingsOpen=ref(false),acronymsOpen=ref(false),informationOpen=ref(false),compact=ref(false),nativeOpen=ref(false),nativeVisited=ref(false)
+const dialogOpen=computed(()=>settingsOpen.value||acronymsOpen.value)
+const navigation=[{label:'Current Storms',href:'#main-content'},{label:'Weather Tools',href:'#weather-tools'},{label:'Satellite Imagery',href:'https://www.tropicaltidbits.com/sat/'},{label:'Forecast Models',href:'#forecast-models'},{label:'Analysis Tools',href:'https://www.tropicaltidbits.com/analysis/'},{label:'About',href:'https://www.tropicaltidbits.com/about.html'}]
+let previousFocus:HTMLElement|null=null
+function closeDialogs(){settingsOpen.value=false;acronymsOpen.value=false}
+watch(dialogOpen,async open=>{if(open){previousFocus=document.activeElement as HTMLElement;await nextTick();document.querySelector<HTMLElement>('[aria-label="Close dialog"]')?.focus()}else previousFocus?.focus()})
+function trapDialog(event:KeyboardEvent){if(event.key!=='Tab')return;const nodes=[...document.querySelectorAll<HTMLElement>('.dialog button,.dialog input,.dialog a')];const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}
+async function onHashChange(){currentHash.value=window.location.hash;if(weatherToolsOpen.value)weatherToolsVisited.value=true;if(forecastModelsOpen.value)forecastModelsVisited.value=true;closeDialogs();await nextTick();const selector=weatherToolsOpen.value?'#weather-tools':forecastModelsOpen.value?'#forecast-models':currentHash.value==='#models-title'?'#models-title':'#main-content';document.querySelector<HTMLElement>(selector+' h1')?.focus({preventScroll:true});document.querySelector(selector)?.scrollIntoView?.({block:'start'})}
+function onNativeToggle(event:Event){nativeOpen.value=(event.target as HTMLDetailsElement).open;if(nativeOpen.value)nativeVisited.value=true}
+onMounted(()=>window.addEventListener('hashchange',onHashChange))
+onBeforeUnmount(()=>window.removeEventListener('hashchange',onHashChange))
 </script>
-
 <template>
-  <div class="site-shell" :class="{ compact }" @keydown.esc="closeDialogs">
-    <header class="site-header">
-      <a class="brand" href="#main-content" aria-label="Tropical Tidbits home">
-        <span class="brand-icon material-icons-round" aria-hidden="true">cyclone</span>
-        <span>Tropical <strong>Tidbits</strong></span>
-      </a>
-      <nav class="main-navigation" aria-label="Main navigation">
-        <template v-for="(item, index) in navigation" :key="item.label">
-          <a v-if="index === 0" class="nav-link" :class="{ current: !weatherToolsOpen && !forecastModelsOpen }" href="#main-content" :aria-current="!weatherToolsOpen && !forecastModelsOpen ? 'page' : undefined">{{ item.label }}</a>
-          <a v-else-if="index === 1" class="nav-link" :class="{ current: weatherToolsOpen }" :href="item.href" :aria-current="weatherToolsOpen ? 'page' : undefined">{{ item.label }}</a>
-          <a v-else-if="index === 3" class="nav-link" :class="{ current: forecastModelsOpen }" :href="item.href" :aria-current="forecastModelsOpen ? 'page' : undefined">{{ item.label }}</a>
-          <a v-else class="nav-link" :href="item.href" target="_blank" rel="noopener noreferrer" :aria-label="`${item.label} — open original website in new tab`">{{ item.label }}</a>
-        </template>
-      </nav>
-    </header>
-
-    <WeatherTools v-if="weatherToolsVisited" v-show="weatherToolsOpen" :tool-id="weatherToolId" />
-    <ForecastModels v-if="forecastModelsVisited" v-show="forecastModelsOpen" :active="forecastModelsOpen" />
-    <main v-show="!weatherToolsOpen && !forecastModelsOpen" id="main-content">
-      <section class="page-title-row">
-        <div>
-          <p class="eyebrow">TROPICAL CYCLONE MONITORING</p>
-          <h1>Global Tropical Cyclone and Disturbance Information</h1>
-        </div>
-        <div class="page-actions">
-          <a class="support-button" href="https://www.tropicaltidbits.com/" target="_blank" rel="noopener noreferrer"><span class="material-icons-round" aria-hidden="true">favorite_border</span><span>Support Tropical Tidbits</span></a>
-          <button class="icon-button" aria-label="Display settings" @click="settingsOpen = true"><span class="material-icons-round" aria-hidden="true">settings</span></button>
-        </div>
-      </section>
-
-      <div class="information-panel">
-        <button class="information-toggle" :aria-expanded="informationOpen" aria-controls="data-information" @click="informationOpen = !informationOpen">
-          <span class="material-icons-round" aria-hidden="true">info_outline</span>
-          <span>Information about this data</span>
-          <span class="material-icons-round disclosure-icon" :class="{ expanded: informationOpen }" aria-hidden="true">expand_more</span>
-        </button>
-        <div v-if="informationOpen" id="data-information" class="information-content">
-          Invest 96W's details, satellite imagery, surface plot and Global + Hurricane image are dated screenshot references, not live feeds. WNC2 and WM-6 track panels use actual forecast data with source dates. Intensity Guidance compares WNC2, WNC3 and WM-6 conditional member means for a separately selected real ATCF ID; it is not automatically a 96W forecast. Original winds/pressures are retained, without pressure-derived wind. WM-6 uses the provider version and a separate forecast_zero lead anchor. Forecast Models loads pre-generated static charts, not private grids per visitor. Active panels check every five minutes with shared browser-memory and server caches; hidden storm panels do not poll. Offline/old data and missing models are explicitly labelled. Cones and landfall markers are not plotted. Always consult official meteorological agencies for warnings.
-        </div>
-      </div>
-
-      <div class="storm-toolbar">
-        <div class="outlined-field">
-          <label for="storm-select">Select a system</label>
-          <select id="storm-select" v-model="selectedStorm"><option>96W INVEST</option></select>
-        </div>
-        <span class="reference-badge"><span class="material-icons-round" aria-hidden="true">photo</span>Screenshot reference · not live</span>
-      </div>
-
-      <div class="weather-layout">
-        <section class="storm-card card" aria-labelledby="storm-title">
-          <div class="card-heading storm-heading"><div><p class="section-kicker">WESTERN PACIFIC</p><h2 id="storm-title">Invest 96W</h2></div><span class="invest-badge">INVEST</span></div>
-          <p class="timestamp"><span class="material-icons-round" aria-hidden="true">schedule</span>As of 06:00 UTC Oct 11, 2026</p>
-          <dl class="storm-details"><div v-for="detail in stormDetails" :key="detail.label"><dt>{{ detail.label }}</dt><dd>{{ detail.value }}<span v-if="detail.detail">{{ detail.detail }}</span></dd></div></dl>
-          <div class="storm-note"><span class="material-icons-round" aria-hidden="true">info_outline</span><span>N/A indicates data unavailable in the reference.</span></div>
-        </section>
-
-        <section class="satellite-card card" aria-labelledby="satellite-title">
-          <div class="card-heading"><div><h2 id="satellite-title">Infrared Satellite Image</h2><p>Invest 96W · Western Pacific</p></div><span class="material-icons-round heading-icon" aria-hidden="true">satellite_alt</span></div>
-          <button class="image-button satellite-image" aria-label="Enlarge infrared satellite reference image" @click="openImage('Infrared Satellite Image', '/images/infrared.png', 'Static image from the screenshot. A satellite animation loop is not available.')"><img src="/images/infrared.png" alt="Infrared satellite imagery of Invest 96W with enhanced cloud-top temperatures" /><span class="image-overlay"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge image</span></button>
-          <div class="card-caption"><span>06:00 UTC · Oct 11, 2026</span><span>Static reference</span></div>
-        </section>
-
-        <aside class="advertisement" aria-label="Advertisement from reference screenshot"><p>Advertisement</p><img src="/images/advertisement.png" alt="Philips Lighting advertisement shown in the original screenshot" /><span>Original screenshot placement</span></aside>
-
-        <section class="surface-card card" aria-labelledby="surface-title">
-          <div class="card-heading"><div><h2 id="surface-title">Surface Plot</h2><p>Marine observations near 96W INVEST</p></div><span class="material-icons-round heading-icon" aria-hidden="true">public</span></div>
-          <p class="surface-note">The most recent hour may not be fully populated with stations yet.</p>
-          <button class="image-button surface-image" aria-label="Enlarge surface observation plot" @click="openImage('Surface Plot', '/images/surface-plot.png', 'Marine surface observations near 96W INVEST, 06:00–07:30 UTC on October 11, 2026.')"><img src="/images/surface-plot.png" alt="Marine surface plot showing the low pressure center and observations near Invest 96W" /><span class="image-overlay"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Click to enlarge</span></button>
-          <div class="surface-controls"><div class="outlined-field"><label for="observation-select">Observation time</label><select id="observation-select" v-model="observation"><option>06:00–07:30 UTC · Oct 11, 2026</option></select></div></div>
-        </section>
-
-        <section class="models-section" aria-labelledby="models-title">
-          <div class="models-heading"><h2 id="models-title">Model Forecasts</h2><button class="text-button" @click="acronymsOpen = true">List of model acronyms<span class="material-icons-round" aria-hidden="true">help_outline</span></button></div>
-          <div class="forecast-grid">
-            <article v-for="forecast in forecasts" :key="forecast.id" class="forecast-card card" :class="{ 'intensity-live-card': forecast.id === 'intensity' }">
-              <div class="forecast-heading"><h3>{{ forecast.title }}</h3><p>{{ forecast.description }}</p></div>
-              <Wnc2Ensemble v-if="forecast.id === 'wnc2'" :active="!weatherToolsOpen && !forecastModelsOpen" />
-              <Wm6Ensemble v-else-if="forecast.id === 'wm6'" :active="!weatherToolsOpen && !forecastModelsOpen" />
-              <IntensityGuidance v-else-if="forecast.id === 'intensity'" :active="!weatherToolsOpen && !forecastModelsOpen" />
-              <button v-else-if="forecast.image" class="image-button forecast-image" :aria-label="`Enlarge ${forecast.title} reference image`" @click="openImage(forecast.title, forecast.image, 'Static 06z reference image from the supplied screenshot.')"><img :src="forecast.image" :alt="`${forecast.title} track forecast for Invest 96W`" /><span class="image-overlay"><span class="material-icons-round" aria-hidden="true">zoom_in</span>Enlarge</span></button>
-              <div v-else class="missing-image"><span class="material-icons-round" aria-hidden="true">image_not_supported</span><strong>Image unavailable</strong></div>
-              <details v-if="forecast.id === 'intensity'" class="intensity-reference-note"><summary>歷史 TRUDY 參考圖（不是上方即時均值）</summary><p>提供的 TRUDY（21E）強度指引圖 · 2026-10-17 00Z · 靜態參考，非即時更新，也不是 96W 的預報。</p><button class="text-button" aria-label="Enlarge Intensity Guidance reference image" @click="openImage('Intensity Guidance · historical reference', '/images/21E-intensity-reference.png', 'Supplied reference: Hurricane TRUDY (21E), initialized 00Z Oct 17, 2026. Not live and not an intensity forecast for Invest 96W.')">開啟歷史原圖 ↗</button><a href="/images/21E-intensity-reference.png" download="21E-TRUDY-intensity-2026101700-reference.png">Download reference PNG</a></details>
-              <div v-if="forecast.id === 'global'" class="cycle-selector" :aria-label="`${forecast.title} model cycle`"><button v-for="cycle in cycles" :key="cycle" :class="{ selected: forecast.cycle === cycle }" :aria-pressed="forecast.cycle === cycle" @click="selectCycle(forecast, cycle)">{{ cycle }}</button></div>
-              <p v-if="forecast.id === 'global'" class="cycle-note">{{ forecast.cycle === '06z' ? '06z screenshot reference' : `${forecast.cycle} unavailable · showing 06z reference` }}</p>
-            </article>
-          </div>
-        </section>
-      </div>
-      <footer><span>Tropical Tidbits · Material Design recreation</span><span>96W details: screenshot · WNC2 + WM-6 auto-update forecast guidance</span></footer>
-    </main>
-
-    <div v-if="dialogOpen" class="dialog-backdrop" @click.self="closeDialogs">
-      <dialog open class="dialog" :class="{ 'image-dialog': preview }" aria-modal="true" aria-labelledby="dialog-title" @keydown.esc="closeDialogs">
-        <div class="dialog-heading"><h2 id="dialog-title">{{ preview?.title ?? (settingsOpen ? 'Display settings' : 'Model acronyms') }}</h2><button class="icon-button" aria-label="Close dialog" autofocus @click="closeDialogs"><span class="material-icons-round" aria-hidden="true">close</span></button></div>
-        <template v-if="preview"><img class="preview-image" :src="preview.image" :alt="preview.title" /><p class="dialog-copy">{{ preview.description }}</p></template>
-        <template v-else-if="settingsOpen"><label class="setting-row"><span><strong>Compact spacing</strong><small>Reduce padding between information panels.</small></span><input v-model="compact" type="checkbox" /></label><p class="dialog-copy">This preview uses static reference images. Display settings do not change the underlying data.</p></template>
-        <template v-else><dl class="acronyms"><div><dt>WNC2 / WN2-C</dt><dd>WeatherNext 2 Cyclones · Google's AI cyclone forecasting model (FNV3.2)</dd></div><div><dt>WNC3 / WN3C</dt><dd>WeatherNext WNV3 cyclone CSV; intensity uses a separately labelled conditional member mean.</dd></div><div><dt>WM-6</dt><dd>WindBorne's tropical cyclone ensemble tracker with locally classified intensity-colored member paths and provider mean; save charts as PNG or SVG</dd></div><div><dt>GeoJSON</dt><dd>Map-ready FeatureCollection containing paths, forecast points and landfalls; cone features are excluded. Landfalls are not displayed on the chart.</dd></div><div><dt>00z / 06z / 12z / 18z</dt><dd>Conventional UTC query slots / WeatherNext initialization. WM-6 provider versions may be hourly; forecast_zero independently anchors forecast lead.</dd></div></dl></template>
-        <div class="dialog-actions"><button class="filled-button" @click="closeDialogs">Done</button></div>
-      </dialog>
-    </div>
-    <Transition name="snackbar"><div v-if="snackbar" class="snackbar" role="status"><span>{{ snackbar }}</span><button @click="snackbar = ''" aria-label="Dismiss notification">Dismiss</button></div></Transition>
-  </div>
+<div class="site-shell" :class="{compact}" @keydown.esc="closeDialogs">
+<header class="site-header"><a class="brand" href="#main-content" aria-label="Tropical Tidbits home"><span class="brand-icon material-icons-round" aria-hidden="true">cyclone</span><span>Tropical <strong>Tidbits</strong></span></a><nav class="main-navigation" aria-label="Main navigation"><a v-for="(item,index) in navigation" :key="item.label" class="nav-link" :class="{current:index===0?currentOpen:index===1?weatherToolsOpen:index===3?forecastModelsOpen:false}" :aria-current="(index===0&&currentOpen)||(index===1&&weatherToolsOpen)||(index===3&&forecastModelsOpen)?'page':undefined" :href="item.href" :target="item.href.startsWith('https:')?'_blank':undefined" :rel="item.href.startsWith('https:')?'noopener noreferrer':undefined">{{ item.label }}</a></nav></header>
+<WeatherTools v-if="weatherToolsVisited" v-show="weatherToolsOpen" :tool-id="weatherToolId"/>
+<ForecastModels v-if="forecastModelsVisited" v-show="forecastModelsOpen" :active="forecastModelsOpen"/>
+<main v-show="currentOpen" id="main-content"><section class="page-title-row"><div><p class="eyebrow">TROPICAL CYCLONE MONITORING</p><h1>Global Tropical Cyclone and Disturbance Information</h1></div><div class="page-actions"><a class="support-button" href="https://www.tropicaltidbits.com/" target="_blank" rel="noopener noreferrer">Support Tropical Tidbits</a><button class="icon-button" aria-label="Display settings" @click="settingsOpen=true"><span class="material-icons-round" aria-hidden="true">settings</span></button></div></section>
+<div class="information-panel"><button class="information-toggle" :aria-expanded="informationOpen" aria-controls="data-information" @click="informationOpen=!informationOpen"><span class="material-icons-round" aria-hidden="true">info_outline</span><span>Information about this data</span><span class="material-icons-round disclosure-icon" :class="{expanded:informationOpen}" aria-hidden="true">expand_more</span></button><div v-if="informationOpen" id="data-information" class="information-content">Current Storm 使用 Zoom Earth 来源时钟及即时清单，分别呈现分析与来源预报，不是实测保证。模型指引独立选择实际 ATCF／来源系统；不按 Zoom 名字或编号尾数自动配对。单位、模型版本、预报基准与 UTC 有效时间分别保留。缺资料不补线，不从气压推算风速，不显示预报锥或登陆标记。请以原气象机构警报为准。</div></div>
+<CurrentStorms :active="currentOpen"/>
+<section class="models-section" aria-labelledby="models-title"><div class="models-heading"><h2 id="models-title">Model Forecasts</h2><button class="text-button" @click="acronymsOpen=true">List of model acronyms<span class="material-icons-round" aria-hidden="true">help_outline</span></button></div><nav class="current-model-links" aria-label="Cyclone model guidance"><a href="#weather-tools/overview">预报洋区总览 ↗</a><a href="#weather-tools/extended">中远期袭击潜势 ↗</a><a href="#forecast-models">Forecast Models ↗</a></nav>
+<article class="forecast-card card intensity-live-card"><div class="forecast-heading"><h3>Intensity Guidance</h3><p>真实模型强度 · 不同统计／单位分别标示 · 独立系统选择</p></div><IntensityGuidance :active="currentOpen"/></article>
+<details class="current-native-guidance" @toggle="onNativeToggle"><summary>WNC2 / WM-6 独立原始路径指引</summary><p>各模式使用自身原始编号，不代表已与上方 Zoom Earth 系统配对。多模型共同 UTC 对照请打开预报洋区总览。</p><div v-if="nativeVisited" class="forecast-grid"><article class="forecast-card card"><div class="forecast-heading"><h3>WNC2 Ensembles</h3><p>WeatherNext 2 Cyclones</p></div><Wnc2Ensemble :active="currentOpen&&nativeOpen"/></article><article class="forecast-card card"><div class="forecast-heading"><h3>WM-6 Ensemble</h3><p>WindBorne tropical cyclone ensemble tracker</p></div><Wm6Ensemble :active="currentOpen&&nativeOpen"/></article></div></details>
+</section><footer><span>Zoom Earth / source agencies · WeatherNext / WindBorne / model sources</span><span>Reference guidance, not an official warning</span></footer></main>
+<div v-if="dialogOpen" class="dialog-backdrop" @click.self="closeDialogs"><dialog open class="dialog" aria-modal="true" aria-labelledby="dialog-title" @keydown="trapDialog"><div class="dialog-heading"><h2 id="dialog-title">{{ settingsOpen?'Display settings':'Model acronyms' }}</h2><button class="icon-button" aria-label="Close dialog" @click="closeDialogs"><span class="material-icons-round" aria-hidden="true">close</span></button></div><template v-if="settingsOpen"><label class="setting-row"><span><strong>Compact spacing</strong><small>Reduce padding between information panels.</small></span><input v-model="compact" type="checkbox"/></label><p class="dialog-copy">Display settings do not change source data.</p></template><dl v-else class="acronyms"><div><dt>WNC2 / WNC3 / GENC</dt><dd>WeatherNext 2 Cyclones / WeatherNext WNV3 / OPER CSV; conditional member means are separately identified.</dd></div><div><dt>WM-6</dt><dd>WindBorne tracker; original wind kt, pressure hPa; Provider run and forecast_zero remain separate.</dd></div><div><dt>WMC AI / SD3 / AIGFS</dt><dd>AI individual paths / native SD3 / locally derived AIGFS low-pressure centres, not ensemble consensus. SD3: TianJi Weather Science and Technology Company, CC BY-NC 4.0.</dd></div></dl><div class="dialog-actions"><button class="filled-button" @click="closeDialogs">Done</button></div></dialog></div>
+</div>
 </template>
+<style scoped>.current-model-links{display:flex;flex-wrap:wrap;gap:10px 20px;margin:0 0 15px;color:#3986b2;font-size:12px}.current-native-guidance{margin-top:18px;color:#657f95;font-size:12px;line-height:1.8}.current-native-guidance summary{cursor:pointer}.current-native-guidance .forecast-grid{margin-top:12px}</style>

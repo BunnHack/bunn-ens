@@ -79,8 +79,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
     <p v-if="loading" class="loading-note" role="status">{{ result ? 'Checking for a newer published run…' : 'Discovering published WeatherNext CSV…' }}</p>
     <div v-if="error" class="wnc2-state error" role="alert"><p>{{ error }}{{ result ? ' Retaining the previous successful run; it is not a fresh update.' : '' }}</p><button @click="reload()">Retry</button></div>
     <template v-if="result">
-      <p class="system-disclaimer">Initialized {{ initialized }} UTC · {{ result.run.model }}<br />Selected track is independent of the static 96W screenshot data.</p>
-      <label class="track-field">System / sample-specific genesis track<select v-model="selectedTrack" aria-label="WNC2 system"><option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}</option></select></label>
+      <p class="system-disclaimer">{{ selectedTrack }} · <a href="#weather-tools/overview">多模型与系统选择 ↗</a></p>
       <label class="lead-field">Forecast window: 0–{{ maxLead }}h <input v-model.number="maxLead" type="range" min="0" max="312" step="6" aria-label="Maximum forecast lead hours" /></label>
       <p class="lead-caption">Selected track available through +{{ availableMax }}h. No positions are invented beyond its lifetime.</p>
       <ChartFrame v-if="data && active" :filename="`WNC2-${selectedTrack.replace(/[^A-Za-z0-9_-]/g, '-')}-${result.run.date}-${result.run.cycle}-0-${maxLead}h`" :title="`WNC2 ${selectedTrack}`"><Wnc2Plot :key="`${initialized}-${selectedTrack}`" :data="data" :max-lead="maxLead" /></ChartFrame>

@@ -160,7 +160,6 @@ onBeforeUnmount(() => { controller?.abort(); detailController?.abort(); clearInt
       <div class="wm6-actions"><button class="text-button" :disabled="exporting" @click="downloadChartPng">{{ exporting ? 'Rendering PNG…' : 'Save chart PNG' }}</button><button class="text-button" @click="downloadChartSvg">Save chart SVG</button><button class="text-button" @click="downloadGeoJson">Download GeoJSON</button><a class="text-button" :href="geojsonUrl" target="_blank" rel="noopener noreferrer">Open map data ↗</a></div>
     </template>
     <p v-if="exportError" class="wm6-error" role="alert">{{ exportError }}</p>
-    <p class="wm6-source">Wind categories are assigned locally from raw max_wind_kt using the shared WNC2 categories (C1 ≥64, C2 ≥83, C3 ≥96, C4 ≥113, C5 ≥137 kt), ignoring provider storm_type. Gray = wind unavailable. No wind rescaling or invented intensification. Thick dark line: provider mean. Natural Earth 1:110m coastlines. Landfall points and cones are hidden.</p>
     <div v-if="enlarged && detail && selected" class="dialog-backdrop" @click.self="enlarged = false" @keydown.esc="enlarged = false">
       <dialog open class="dialog wm6-dialog" aria-modal="true" aria-labelledby="wm6-dialog-title">
         <div class="dialog-heading"><h2 id="wm6-dialog-title">WM-6 · {{ selected.tropical_cyclone_id }} · {{ memberCount }} members</h2><button class="icon-button" aria-label="Close WM-6 chart" @click="enlarged = false">×</button></div>

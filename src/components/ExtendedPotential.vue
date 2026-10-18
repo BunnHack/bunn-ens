@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { zhHans } from '../data/zh-hans'
 import BasinPlot from './BasinPlot.vue'
 import ChartFrame from './ChartFrame.vue'
 import { basinCsv, basinRegions, pointInRegion, type BasinRegion, type MapTheme } from '../data/basin'
@@ -42,7 +43,7 @@ const trackCount = computed(() => new Set(visible.value.map(point => `${point.sa
 const memberCount = computed(() => new Set(visible.value.map(point => point.sample)).size)
 const mean = computed(() => (!result.value || storm.value === 'all' ? [] : selectedGroup.value ? candidateMean(selectedGroup.value) : selectedChoice.value?.kind === 'matched' ? cycloneMean(result.value, storm.value) : []).filter(point => point.leadHours >= start.value && point.leadHours <= end.value))
 const meanLabel = computed(() => selectedGroup.value ? 'Local group mean' : storm.value === 'all' ? 'No cross-storm mean' : selectedChoice.value?.kind !== 'matched' ? 'Single-member candidate' : model.value === 'wm6' ? 'Provider mean' : 'Ensemble mean (≥25%)')
-const mapRegion = computed(() => focusStorm.value && storm.value !== 'all' && catalog.value ? focusTrackRegion(mean.value.length ? mean.value : catalog.value.points, region.value) : region.value)
+const mapRegion = computed(() => focusStorm.value && storm.value !== 'all' && catalog.value ? focusTrackRegion(mean.value.length ? mean.value : catalog.value.points, region.value, 1.5) : region.value)
 const denominator = computed(() => { try { return result.value ? potentialDenominator(result.value, selectedGroup.value ? 'all' : storm.value) : null } catch { return null } })
 const probability = computed(() => {
   if (product.value !== 'probability' || !result.value || !fullCatalog.value) return { field: undefined, error: '' }
@@ -103,36 +104,36 @@ onBeforeUnmount(() => { ++revision; controller?.abort() })
 
 <template>
   <section class="extended-potential">
-    <header class="ep-heading"><h1>{{ title }}</h1><span>{{ modelInfo.label }} · {{ windowLabel }}</span></header>
+    <header class="ep-heading"><h1>{{ zhHans(title) }}</h1><span>{{ zhHans(modelInfo.label) }} · {{ zhHans(windowLabel) }}</span></header>
     <div class="ep-layout">
-      <section class="ep-workspace" aria-label="中遠期預報圖">
-        <p v-if="loading" class="ep-status" role="status">正在載入 {{ modelInfo.label }} 真實路徑…</p>
-        <p v-if="error" class="ep-status ep-error" role="alert">{{ error }} <button @click="reload">重試</button></p>
-        <p v-if="result?.warning" class="ep-status ep-warning">{{ result.warning }}</p>
-        <p v-if="result?.source==='snapshot'" class="ep-status ep-warning">有日期的本地備份，未確認最新。</p>
-        <p v-if="probability.error" class="ep-status ep-warning">{{ probability.error }} 不以空白或100%代替。</p>
-        <ChartFrame v-if="result&&catalog&&active&&!probability.error" :filename="filename" :title="`${modelInfo.label} ${title} ${windowLabel}`"><BasinPlot :catalog="catalog" :region="mapRegion" :theme="theme" :model-label="modelInfo.label" :wind-mode="product==='ensemble'" :storm="storm==='all'?'All independent tracks':selectedChoice?.label??storm" :mean="mean" :mean-label="meanLabel" :association="association" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product==='ensemble'&&showHours" :time-anchor="result.wm6?.forecastZero??''"/></ChartFrame>
-        <p v-if="result" class="ep-provenance">{{ result.wm6?'供應商版本':'模型起報' }} {{ result.catalog.initTime }} UTC<span v-if="result.wm6"> · 預報基準 {{ result.wm6.forecastZero }}</span><span v-if="focusStorm&&storm!=='all'"> · 已聚焦系統均線，外圍成員可能超出圖域。</span></p>
-        <p v-if="selectedGroup" class="ep-cluster-note">本站 G 為非官方幾何分群；均線只代表入群成員的條件平均，不是全系集共識。</p>
-        <details class="ep-method" :open="showInfo"><summary>來源、分群及機率計算說明</summary>
-          <div class="ep-counts" v-if="result"><p>圖域／時窗：{{ trackCount }} 路徑 · {{ memberCount }} 成員 · {{ visible.length }} 點。完整分母 {{ denominator??'不可用' }}；不按群組或圖域縮小。全球資料 {{ result.catalog.points.length }} 點、{{ result.catalog.totalSamples }} 已辨識成員。</p></div>
-          <p v-if="validTimes.length">有效時間窗：{{ utc(validTimes[0]!) }} → {{ utc(validTimes[1]!) }}</p>
-          <p class="ep-cluster-note">{{ clustering.note }} 本站 G 僅屬該模型／版本；不同 G 也可能只是同一未來系統的不同情境，不把群數當風暴數。可在進階選項關閉分群並查看原始獨立路徑。</p>
-          <p>分群首個保留點時差≤{{ associationRules.startLagHours }}h（非官方生成時間），早期{{ associationRules.comparisonHours }}h內共同≥{{ associationRules.overlapHours }}h；球面距離中位數≤{{ associationRules.medianKm }}km、80分位≤{{ associationRules.p80Km }}km，每條直接符合參考路徑，不無限串鏈。同成員模糊配對不硬併；至少3位及本批成員5%。群均線逐時≥3位及群組25%；全部路徑不做跨風暴平均。</p>
-          <p>本站機率為120km內、每成員每位置最多一次的通過比例，非官方襲擊／登陸／損害率。選G只計該群但保留完整系集分母。球面短弧裁切兩端，不跨越12h缺口、不連不同ID。缺失路徑可能使比例偏低，CSV漏整個成員可能使分母偏小、比例偏高；無路徑不等於安全。中文城市指市中心點，不是縣市覆蓋率。</p>
-          <p>原始kt／hPa及成員／ID不變，不由氣壓換算風速。WM-6已匹配均線來自供應商，WN／GENC為本站條件平均。Natural Earth 1:50m簡化海岸／國界。時窗限0–312h。查詢完成 {{ result?.checkedAt }}，非模型起報時間。<a v-if="result?.url" :href="result.url" target="_blank" rel="noopener">實際資料來源 ↗</a></p>
-          <details v-if="selectedGroup" class="ep-group-members"><summary>{{ selectedGroup.label }} 原始成員與ID（支持度非生成機率）</summary><p>不代表全體系集已同意有共同風暴。</p><ul><li v-for="track in selectedGroup.tracks" :key="`${track.sample}:${track.trackId}`">sample/member={{ track.sample }} · {{ track.trackId }}</li></ul></details>
+      <section class="ep-workspace" aria-label="中远期预报图">
+        <p v-if="loading" class="ep-status" role="status">正在载入 {{ zhHans(modelInfo.label) }} 真实路径…</p>
+        <p v-if="error" class="ep-status ep-error" role="alert">{{ zhHans(error) }} <button @click="reload">重试</button></p>
+        <p v-if="result?.warning" class="ep-status ep-warning">{{ zhHans(result.warning) }}</p>
+        <p v-if="result?.source==='snapshot'" class="ep-status ep-warning">有日期的本地备份，未确认最新。</p>
+        <p v-if="probability.error" class="ep-status ep-warning">{{ zhHans(probability.error) }} 不以空白或100%代替。</p>
+        <ChartFrame v-if="result&&catalog&&active&&!probability.error" :filename="filename" :title="zhHans(`${modelInfo.label} ${title} ${windowLabel}`)"><BasinPlot :catalog="catalog" :region="mapRegion" :theme="theme" :model-label="modelInfo.label" :wind-mode="product==='ensemble'" :storm="storm==='all'?'All independent tracks':selectedChoice?.label??storm" :mean="mean" :mean-label="meanLabel" :association="association" :probability="probability.field" :lead-start="start" :lead-end="end" :show-lead-labels="product==='ensemble'&&showHours" :time-anchor="result.wm6?.forecastZero??''"/></ChartFrame>
+        <p v-if="result" class="ep-provenance">{{ zhHans(result.wm6?'供应商版本':'模型起报') }} {{ zhHans(result.catalog.initTime) }} UTC<span v-if="result.wm6"> · 预报基准 {{ zhHans(result.wm6.forecastZero) }}</span><span v-if="focusStorm&&storm!=='all'"> · 已聚焦系统均线，外围成员可能超出图域。</span></p>
+        <p v-if="selectedGroup" class="ep-cluster-note">本站 G 为非官方几何分群；均线只代表入群成员的条件平均，不是全系集共识。</p>
+        <details class="ep-method" :open="showInfo"><summary>来源、分群及概率计算说明</summary>
+          <div class="ep-counts" v-if="result"><p>图域／时窗：{{ zhHans(trackCount) }} 路径 · {{ zhHans(memberCount) }} 成员 · {{ zhHans(visible.length) }} 点。完整分母 {{ zhHans(denominator??'不可用') }}；不按群组或图域缩小。全球资料 {{ zhHans(result.catalog.points.length) }} 点、{{ zhHans(result.catalog.totalSamples) }} 已辨识成员。</p></div>
+          <p v-if="validTimes.length">有效时间窗：{{ zhHans(utc(validTimes[0]!)) }} → {{ zhHans(utc(validTimes[1]!)) }}</p>
+          <p class="ep-cluster-note">{{ zhHans(clustering.note) }} 本站 G 仅属该模型／版本；不同 G 也可能只是同一未来系统的不同情境，不把群数当风暴数。可在进阶选项关闭分群并查看原始独立路径。</p>
+          <p>分群首个保留点时差≤{{ zhHans(associationRules.startLagHours) }}h（非官方生成时间），早期{{ zhHans(associationRules.comparisonHours) }}h内共同≥{{ zhHans(associationRules.overlapHours) }}h；球面距离中位数≤{{ zhHans(associationRules.medianKm) }}km、80分位≤{{ zhHans(associationRules.p80Km) }}km，每条直接符合参考路径，不无限串链。同成员模糊配对不硬并；至少3位及本批成员5%。群均线逐时≥3位及群组25%；全部路径不做跨风暴平均。</p>
+          <p>本站概率为120km内、每成员每位置最多一次的通过比例，非官方袭击／登陆／损害率。选G只计该群但保留完整系集分母。球面短弧裁切两端，不跨越12h缺口、不连不同ID。缺失路径可能使比例偏低，CSV漏整个成员可能使分母偏小、比例偏高；无路径不等于安全。中文城市指市中心点，不是县市覆盖率。</p>
+          <p>原始kt／hPa及成员／ID不变，不由气压换算风速。WM-6已匹配均线来自供应商，WN／GENC为本站条件平均。Natural Earth 1:50m简化海岸／国界。时窗限0–312h。查询完成 {{ zhHans(result?.checkedAt) }}，非模型起报时间。<a v-if="result?.url" :href="result.url" target="_blank" rel="noopener">实际资料来源 ↗</a></p>
+          <details v-if="selectedGroup" class="ep-group-members"><summary>{{ zhHans(selectedGroup.label) }} 原始成员与ID（支持度非生成概率）</summary><p>不代表全体系集已同意有共同风暴。</p><ul><li v-for="track in selectedGroup.tracks" :key="`${track.sample}:${track.trackId}`">sample/member={{ zhHans(track.sample) }} · {{ zhHans(track.trackId) }}</li></ul></details>
         </details>
       </section>
-      <aside class="ep-controls" aria-label="中遠期預報控制台"><h2>主機</h2>
-        <label>模型<select v-model="model" aria-label="Potential model" @change="run='latest';storm='all'"><option v-for="item in models" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
-        <label>起報／供應商版本<select v-model="run" aria-label="Potential initialization"><option value="latest">最新已發布</option><option v-for="item in queryRuns" :key="item.key" :value="item.key">{{ item.label }}</option></select></label>
-        <label>預報類型</label><div class="ep-product-tabs"><button :class="{selected:product==='ensemble'}" @click="product='ensemble'">系集預報</button><button :class="{selected:product==='probability'}" @click="product='probability'">機率預報</button></div>
-        <label>系統（本站G非官方身分）</label><div class="ep-storm-tabs"><button :class="{selected:storm==='all'}" @click="storm='all'">全部</button><button v-for="option in matchedChoices" :key="option.key" :class="{selected:storm===option.key}" @click="storm=option.key">{{ option.key }}</button><button v-for="option in groupChoices" :key="option.key" class="ep-group-button" :class="{selected:storm===option.key}" @click="storm=option.key">{{ option.label }}</button></div>
-        <label>起始時效：+{{ start }}h<input :value="start" type="range" min="0" max="306" step="6" aria-label="Potential start hour" @input="changeStart"/></label><label>結束時效：+{{ end }}h<input :value="end" type="range" min="6" max="312" step="6" aria-label="Potential end hour" @input="changeEnd"/></label>
-        <label>地圖區域<select v-model="regionId" aria-label="Potential region" @change="focusStorm=false"><option v-for="item in regions" :key="item.id" :value="item.id">{{ item.label }}</option></select></label><label class="ep-check"><input v-model="focusStorm" type="checkbox" aria-label="Focus candidate mean"/>自動放大系統／均線</label>
-        <div class="ep-current"><strong>目前選擇</strong><p>{{ modelInfo.label }} · {{ product==='ensemble'?'系集':'機率' }} · {{ windowLabel }}</p><p>{{ selectedChoice?.label??'全部獨立路徑（無共同均線）' }}</p></div>
-        <details class="ep-advanced"><summary>進階／原始路徑</summary><label>氣旋／候選<select v-model="storm" aria-label="Potential cyclone"><option value="all">全部獨立路徑（無共同均線）</option><optgroup v-if="matchedChoices.length" label="已匹配氣旋"><option v-for="item in matchedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="groupChoices.length" label="本站幾何候選群組（非官方身分）"><option v-for="item in groupChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup><optgroup v-if="generatedChoices.length" label="保留原始獨立單成員路徑"><option v-for="item in generatedChoices" :key="item.key" :value="item.key">{{ item.label }}</option></optgroup></select></label><label class="ep-check"><input v-model="groupCandidates" type="checkbox" aria-label="Associate candidate systems"/>本站候選分群</label><label class="ep-check"><input v-model="showHours" type="checkbox"/>抽樣時效標籤</label><label>主題<select v-model="theme" aria-label="Potential map theme"><option value="light">白底</option><option value="color">彩色</option><option value="dark">黑底</option></select></label><button class="ep-download" :disabled="!visible.length" @click="downloadCsv">下載圖域時窗CSV</button><button class="ep-refresh" :disabled="loading" @click="reload">重新查詢資料</button></details>
+      <aside class="ep-controls" aria-label="中远期预报控制台"><h2>主机</h2>
+        <label>模型<select v-model="model" aria-label="Potential model" @change="run='latest';storm='all'"><option v-for="item in models" :key="item.id" :value="item.id">{{ zhHans(item.label) }}</option></select></label>
+        <label>起报／供应商版本<select v-model="run" aria-label="Potential initialization"><option value="latest">最新已发布</option><option v-for="item in queryRuns" :key="item.key" :value="item.key">{{ zhHans(item.label) }}</option></select></label>
+        <label>预报类型</label><div class="ep-product-tabs"><button :class="{selected:product==='ensemble'}" @click="product='ensemble'">系集预报</button><button :class="{selected:product==='probability'}" @click="product='probability'">概率预报</button></div>
+        <label>系统（本站G非官方身分）</label><div class="ep-storm-tabs"><button :class="{selected:storm==='all'}" @click="storm='all'">全部</button><button v-for="option in matchedChoices" :key="option.key" :class="{selected:storm===option.key}" @click="storm=option.key">{{ zhHans(option.key) }}</button><button v-for="option in groupChoices" :key="option.key" class="ep-group-button" :class="{selected:storm===option.key}" @click="storm=option.key">{{ zhHans(option.label) }}</button></div>
+        <label>起始时效：+{{ zhHans(start) }}h<input :value="start" type="range" min="0" max="306" step="6" aria-label="Potential start hour" @input="changeStart"/></label><label>结束时效：+{{ zhHans(end) }}h<input :value="end" type="range" min="6" max="312" step="6" aria-label="Potential end hour" @input="changeEnd"/></label>
+        <label>地图区域<select v-model="regionId" aria-label="Potential region" @change="focusStorm=false"><option v-for="item in regions" :key="item.id" :value="item.id">{{ zhHans(item.label) }}</option></select></label><label class="ep-check"><input v-model="focusStorm" type="checkbox" aria-label="Focus candidate mean"/>自动放大系统／均线</label>
+        <div class="ep-current"><strong>目前选择</strong><p>{{ zhHans(modelInfo.label) }} · {{ zhHans(product==='ensemble'?'系集':'概率') }} · {{ zhHans(windowLabel) }}</p><p>{{ zhHans(selectedChoice?.label??'全部独立路径（无共同均线）') }}</p></div>
+        <details class="ep-advanced"><summary>进阶／原始路径</summary><label>气旋／候选<select v-model="storm" aria-label="Potential cyclone"><option value="all">全部独立路径（无共同均线）</option><optgroup v-if="matchedChoices.length" label="已匹配气旋"><option v-for="item in matchedChoices" :key="item.key" :value="item.key">{{ zhHans(item.label) }}</option></optgroup><optgroup v-if="groupChoices.length" label="本站几何候选群组（非官方身分）"><option v-for="item in groupChoices" :key="item.key" :value="item.key">{{ zhHans(item.label) }}</option></optgroup><optgroup v-if="generatedChoices.length" label="保留原始独立单成员路径"><option v-for="item in generatedChoices" :key="item.key" :value="item.key">{{ zhHans(item.label) }}</option></optgroup></select></label><label class="ep-check"><input v-model="groupCandidates" type="checkbox" aria-label="Associate candidate systems"/>本站候选分群</label><label class="ep-check"><input v-model="showHours" type="checkbox"/>抽样时效标签</label><label>主题<select v-model="theme" aria-label="Potential map theme"><option value="light">白底</option><option value="color">彩色</option><option value="dark">黑底</option></select></label><button class="ep-download" :disabled="!visible.length" @click="downloadCsv">下载图域时窗CSV</button><button class="ep-refresh" :disabled="loading" @click="reload">重新查询资料</button></details>
       </aside>
     </div>
   </section>

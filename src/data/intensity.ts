@@ -8,6 +8,7 @@ export const intensityModels = [
   { id: 'wn2', label: 'WNC2', color: '#d55e00', source: 'WeatherNext 2 · FNV3P1' },
   { id: 'wn3', label: 'WNC3', color: '#0072b2', source: 'WeatherNext · WNV3' },
   { id: 'wm6', label: 'WM-6', color: '#009773', source: 'WindBorne cyclone tracker' },
+  { id: 'genc', label: 'GENC', color: '#ad4ea7', source: 'WeatherNext · OPER' },
 ] as const
 export const matchedCyclone = (id: string) => /^[A-Z]{2}\d{6}$/.test(id)
 export function forecastEpoch(raw: string): number {

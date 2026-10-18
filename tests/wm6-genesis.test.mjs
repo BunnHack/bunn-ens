@@ -94,15 +94,15 @@ await test('Basin map enables genesis by default, reports scope and paired raw d
   try {
     assert.equal(document.querySelector('.wm6-unofficial-toggle input').checked, true)
     assert.equal(document.querySelectorAll('.basin-pressure-points circle').length, 4)
-    assert.match(document.querySelector('.wm6-track-counts').textContent, /1 個匹配氣旋、2 條未匹配成員路徑/)
-    assert.match(document.querySelector('.wm6-track-counts').textContent, /當前圖中：1 個匹配氣旋、1 條未匹配路徑/)
+    assert.match(document.querySelector('.wm6-track-counts').textContent, /1 个匹配气旋、2 条未匹配成员路径/)
+    assert.match(document.querySelector('.wm6-track-counts').textContent, /当前图中：1 个匹配气旋、1 条未匹配路径/)
     assert.match(document.querySelector('.wm6-audit-pair').textContent, /949.8 hPa.*56.9 kt/)
     assert.match(document.querySelector('.wm6-audit').textContent, /forecast_zero.*2026-10-17T00:00:00Z/)
     const titles = [...document.querySelectorAll('.basin-pressure-points title')].map(el => el.textContent)
     assert.ok(titles.some(text => text.includes(a) && text.includes('998 hPa') && text.includes('28.0 kt')))
     const input = document.querySelector('.wm6-unofficial-toggle input'); input.click(); await settle()
     assert.equal(document.querySelectorAll('.basin-pressure-points circle').length, 2)
-    assert.match(document.querySelector('.wm6-track-counts').textContent, /未匹配路徑已隱藏/)
+    assert.match(document.querySelector('.wm6-track-counts').textContent, /未匹配路径已隐藏/)
     assert.ok(calls.some(url => url.includes('include_unofficial_ids=false')))
   } finally { app.unmount() }
 })
@@ -113,7 +113,7 @@ await test('Typhoon selector separates generated tracks from ATCF buttons and ne
   const app = createApp(Panel, { mode: 'typhoon' }); app.mount('#app'); await chooseWm6()
   try {
     assert.equal(document.querySelectorAll('.potential-storms button').length, 1)
-    const select = document.querySelector('[aria-label="氣旋與單成員生成路徑"]')
+    const select = document.querySelector('[aria-label="气旋与单成员生成路径"]')
     assert.equal(select.querySelectorAll('optgroup:nth-child(2) option').length, 2)
     select.value = a; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); await settle()
     assert.equal(document.querySelectorAll('.basin-track-lines line').length, 1)

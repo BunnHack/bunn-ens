@@ -58,12 +58,12 @@ await test('Candidate UI selects a local system, preserves original CSV IDs, exp
  try{
   assert.equal(document.querySelectorAll('.ep-group-button').length,1);document.querySelector('.ep-group-button').click();await settle()
   assert.match(document.querySelector('svg > title').textContent,/本站 G1/);assert.match(document.querySelector('svg > desc').textContent,/not provider storm identity/);assert.match(document.querySelector('.ep-group-members').textContent,/sample\/member=0/)
-  assert.ok(document.querySelectorAll('.potential-mean line').length>0);assert.match(document.querySelector('.ep-counts').textContent,/完整分母 8；不按群組或圖域縮小/)
+  assert.ok(document.querySelectorAll('.potential-mean line').length>0);assert.match(document.querySelector('.ep-counts').textContent,/完整分母 8；不按群组或图域缩小/)
   const svg=serializeChart(document.querySelector('svg'));assert.match(svg,/local geometric association/);assert.match(svg,/700/)
   document.querySelector('.ep-download').click();await settle();const output=await exported.text();assert.match(output,/700/);assert.match(output,/949.8/);assert.ok(!output.includes('local:'));assert.ok(!output.includes('WP292026'))
-  const probability=[...document.querySelectorAll('.ep-product-tabs button')].find(button=>button.textContent.includes('機率'));probability.click();await settle()
-  assert.match(document.querySelector('svg > desc').textContent,/Selected local candidate group only/);assert.match(document.querySelector('svg > desc').textContent,/Full ensemble denominator 8/);assert.ok(!document.querySelector('svg > desc').textContent.includes('Single matched cyclone'))
-  document.querySelector('[aria-label="Associate candidate systems"]').click();await settle();assert.equal(document.querySelectorAll('.ep-group-button').length,0);assert.equal(document.querySelector('[aria-label="Potential cyclone"]').value,'all');assert.match(document.querySelector('svg > desc').textContent,/All-system union/)
+  const probability=[...document.querySelectorAll('.ep-product-tabs button')].find(button=>button.textContent.includes('概率'));probability.click();await settle()
+  assert.match(document.querySelector('svg > desc').textContent,/仅所选非官方候选群/);assert.match(document.querySelector('svg > desc').textContent,/完整分母8/);assert.ok(!document.querySelector('svg > desc').textContent.includes('单一已匹配气旋'))
+  document.querySelector('[aria-label="Associate candidate systems"]').click();await settle();assert.equal(document.querySelectorAll('.ep-group-button').length,0);assert.equal(document.querySelector('[aria-label="Potential cyclone"]').value,'all');assert.match(document.querySelector('svg > desc').textContent,/全部系统取并集/)
  }finally{app.unmount()}
 })
 dom.window.close()

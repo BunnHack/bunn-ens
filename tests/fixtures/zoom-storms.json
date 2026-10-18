@@ -1,0 +1,512 @@
+{
+  "schema": 1,
+  "source": "https://zoom.earth/",
+  "providerTime": "2026-10-18T04:24:28Z",
+  "catalogDate": "2026-10-18T00:00Z",
+  "checkedAt": "2026-10-18T04:25:00Z",
+  "windUnit": "kt",
+  "pressureUnit": "hPa",
+  "entries": [
+    {
+      "id": "champi-2026",
+      "kind": "storm",
+      "data": {
+        "id": "champi-2026",
+        "name": "Champi",
+        "title": "台风 Champi",
+        "description": "超级台风",
+        "season": "2026",
+        "type": "台风",
+        "max": 15,
+        "forecast": 18,
+        "active": true,
+        "ja": 30,
+        "agencies": "JTWC",
+        "track": [
+          {
+            "date": "2026-10-14T12:00:00Z",
+            "coordinates": [
+              161.2,
+              9.6
+            ],
+            "wind": 29,
+            "pressure": 1003,
+            "basin": "WP",
+            "forecast": false,
+            "rank": -1,
+            "code": "D",
+            "description": "热带低压"
+          },
+          {
+            "date": "2026-10-14T15:00:00Z",
+            "coordinates": [
+              160.9,
+              10
+            ],
+            "wind": 29,
+            "pressure": 1004,
+            "basin": "WP",
+            "forecast": false,
+            "rank": -1,
+            "code": "D",
+            "description": "热带低压"
+          },
+          {
+            "date": "2026-10-14T18:00:00Z",
+            "coordinates": [
+              160.5,
+              10.4
+            ],
+            "wind": 29,
+            "pressure": 1004,
+            "basin": "WP",
+            "forecast": false,
+            "rank": -1,
+            "code": "D",
+            "description": "热带低压"
+          },
+          {
+            "date": "2026-10-14T21:00:00Z",
+            "coordinates": [
+              160,
+              10.6
+            ],
+            "wind": 29,
+            "pressure": 1004,
+            "basin": "WP",
+            "forecast": false,
+            "rank": -1,
+            "code": "D",
+            "description": "热带低压"
+          },
+          {
+            "date": "2026-10-15T00:00:00Z",
+            "coordinates": [
+              159.4,
+              10.7
+            ],
+            "wind": 29,
+            "pressure": 1004,
+            "basin": "WP",
+            "forecast": false,
+            "rank": -1,
+            "code": "D",
+            "description": "热带低压"
+          },
+          {
+            "date": "2026-10-15T06:00:00Z",
+            "coordinates": [
+              158.4,
+              10.7
+            ],
+            "wind": 30,
+            "pressure": 1002,
+            "basin": "WP",
+            "forecast": false,
+            "rank": -1,
+            "code": "D",
+            "description": "热带低压"
+          },
+          {
+            "date": "2026-10-15T12:00:00Z",
+            "coordinates": [
+              157.4,
+              11
+            ],
+            "wind": 35,
+            "pressure": 1001,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 0,
+            "code": "S",
+            "description": "热带风暴"
+          },
+          {
+            "date": "2026-10-15T18:00:00Z",
+            "coordinates": [
+              155.7,
+              11.2
+            ],
+            "wind": 40,
+            "pressure": 999,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 0,
+            "code": "S",
+            "description": "热带风暴"
+          },
+          {
+            "date": "2026-10-16T00:00:00Z",
+            "coordinates": [
+              153.8,
+              11.3
+            ],
+            "wind": 45,
+            "pressure": 998,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 0,
+            "code": "S",
+            "description": "热带风暴"
+          },
+          {
+            "date": "2026-10-16T06:00:00Z",
+            "coordinates": [
+              152.6,
+              11.3
+            ],
+            "wind": 50,
+            "pressure": 993,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 0,
+            "code": "S",
+            "description": "热带风暴"
+          },
+          {
+            "date": "2026-10-16T12:00:00Z",
+            "coordinates": [
+              151.4,
+              11.4
+            ],
+            "wind": 65,
+            "pressure": 992,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 2,
+            "code": "T",
+            "description": "台风"
+          },
+          {
+            "date": "2026-10-16T18:00:00Z",
+            "coordinates": [
+              150.2,
+              11.9
+            ],
+            "wind": 80,
+            "pressure": 984,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 2,
+            "code": "T",
+            "description": "台风"
+          },
+          {
+            "date": "2026-10-17T00:00:00Z",
+            "coordinates": [
+              148.6,
+              12.3
+            ],
+            "wind": 90,
+            "pressure": 981,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 2,
+            "code": "T",
+            "description": "台风"
+          },
+          {
+            "date": "2026-10-17T06:00:00Z",
+            "coordinates": [
+              147.3,
+              12.5
+            ],
+            "wind": 110,
+            "pressure": 948,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 3,
+            "code": "ST",
+            "description": "强台风"
+          },
+          {
+            "date": "2026-10-17T12:00:00Z",
+            "coordinates": [
+              146.1,
+              12.6
+            ],
+            "wind": 120,
+            "pressure": 945,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 4,
+            "code": "VT",
+            "description": "暴力台风"
+          },
+          {
+            "date": "2026-10-17T18:00:00Z",
+            "coordinates": [
+              144.8,
+              13.1
+            ],
+            "wind": 130,
+            "pressure": 934,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-18T00:00:00Z",
+            "coordinates": [
+              143.4,
+              13.1
+            ],
+            "wind": 130,
+            "pressure": 934,
+            "basin": "WP",
+            "forecast": false,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-18T12:00:00Z",
+            "coordinates": [
+              141.2,
+              13.6
+            ],
+            "wind": 135,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-19T00:00:00Z",
+            "coordinates": [
+              139.3,
+              14.4
+            ],
+            "wind": 140,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-19T12:00:00Z",
+            "coordinates": [
+              137.3,
+              15.4
+            ],
+            "wind": 140,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-20T00:00:00Z",
+            "coordinates": [
+              135.1,
+              16.4
+            ],
+            "wind": 140,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-20T12:00:00Z",
+            "coordinates": [
+              132.5,
+              17.5
+            ],
+            "wind": 135,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-21T00:00:00Z",
+            "coordinates": [
+              130,
+              18.6
+            ],
+            "wind": 135,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 5,
+            "code": "SU",
+            "description": "超级台风"
+          },
+          {
+            "date": "2026-10-22T00:00:00Z",
+            "coordinates": [
+              126.8,
+              20.3
+            ],
+            "wind": 125,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 4,
+            "code": "VT",
+            "description": "暴力台风"
+          },
+          {
+            "date": "2026-10-23T00:00:00Z",
+            "coordinates": [
+              124.1,
+              21.8
+            ],
+            "wind": 105,
+            "pressure": null,
+            "basin": "WP",
+            "forecast": true,
+            "rank": 3,
+            "code": "ST",
+            "description": "强台风"
+          }
+        ],
+        "place": "near Guam"
+      },
+      "error": ""
+    },
+    {
+      "id": "96a-2026",
+      "kind": "storm",
+      "data": {
+        "id": "96a-2026",
+        "name": "96A",
+        "title": "系统 96A",
+        "description": "系统",
+        "season": "",
+        "type": "系统",
+        "max": 4,
+        "forecast": 4,
+        "active": true,
+        "invest": true,
+        "chance": "low",
+        "agencies": "JTWC",
+        "track": [
+          {
+            "date": "2026-10-17T00:00:00Z",
+            "coordinates": [
+              54.6,
+              6.8
+            ],
+            "wind": 15,
+            "pressure": 1011,
+            "basin": "NI",
+            "forecast": false,
+            "rank": -2,
+            "code": "B",
+            "description": "热带扰动"
+          },
+          {
+            "date": "2026-10-17T06:00:00Z",
+            "coordinates": [
+              54.8,
+              7.4
+            ],
+            "wind": 15,
+            "pressure": 1011,
+            "basin": "NI",
+            "forecast": false,
+            "rank": -2,
+            "code": "B",
+            "description": "热带扰动"
+          },
+          {
+            "date": "2026-10-17T12:00:00Z",
+            "coordinates": [
+              55.3,
+              7.7
+            ],
+            "wind": 15,
+            "pressure": 1010,
+            "basin": "NI",
+            "forecast": false,
+            "rank": -2,
+            "code": "B",
+            "description": "热带扰动"
+          },
+          {
+            "date": "2026-10-17T18:00:00Z",
+            "coordinates": [
+              55.8,
+              7.6
+            ],
+            "wind": 15,
+            "pressure": 1010,
+            "basin": "NI",
+            "forecast": false,
+            "rank": -2,
+            "code": "B",
+            "description": "热带扰动"
+          },
+          {
+            "date": "2026-10-18T00:00:00Z",
+            "coordinates": [
+              57.2,
+              7.1
+            ],
+            "wind": 20,
+            "pressure": 1010,
+            "basin": "NI",
+            "forecast": false,
+            "rank": -2,
+            "code": "B",
+            "description": "热带扰动"
+          }
+        ],
+        "place": "in the North Indian Ocean"
+      },
+      "error": ""
+    },
+    {
+      "id": "d01l-2026",
+      "kind": "disturbance",
+      "data": {
+        "id": "d01l-2026",
+        "name": "1",
+        "title": "扰动 1",
+        "description": "扰动",
+        "season": "",
+        "type": "扰动",
+        "max": 0,
+        "forecast": 0,
+        "active": true,
+        "disturbance": true,
+        "centroid": true,
+        "chance2day": 0,
+        "chance7day": 30,
+        "agencies": "NHC",
+        "track": [
+          {
+            "date": "2026-10-17T23:20:00Z",
+            "coordinates": [
+              -70.256,
+              36.325
+            ],
+            "wind": 0,
+            "pressure": null,
+            "basin": "NA",
+            "forecast": false,
+            "rank": -2,
+            "code": "B",
+            "description": "扰动"
+          }
+        ],
+        "place": "near the U.S. East Coast"
+      },
+      "error": ""
+    }
+  ]
+}

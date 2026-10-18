@@ -71,7 +71,7 @@ await test('New workspace shows real 120–312h tracks, one peak per member, Eng
  t.mock.method(globalThis,'fetch',fixtureFetch)
  const app=createApp(Panel);app.mount('#app');await settle()
  try{
-  assert.equal(document.querySelector('h1').textContent,'中遠期襲擊潛勢');assert.equal(document.querySelector('[aria-label="Potential start hour"]').value,'120')
+  assert.equal(document.querySelector('h1').textContent,'中远期袭击潜势');assert.equal(document.querySelector('[aria-label="Potential start hour"]').value,'120')
   assert.match(document.querySelector('.ep-provenance').textContent,/2026-10-16 18:00:00 UTC/)
   assert.match(document.querySelector('.ep-method').textContent,/比例偏高/);assert.match(document.querySelector('.ep-method').textContent,/比例偏低/)
   assert.ok(document.querySelectorAll('.potential-mean line').length>0);assert.equal(document.querySelector('.ep-navigation'),null);assert.equal(document.querySelector('[aria-label="Focus candidate mean"]').checked,true);await click('.ep-storm-tabs button','全部');
@@ -80,11 +80,11 @@ await test('New workspace shows real 120–312h tracks, one peak per member, Eng
   assert.ok(document.querySelectorAll('.potential-lead-labels text').length>0)
   assert.ok([...document.querySelectorAll('.basin-track-lines title')].every(el=>Number(/\+(\d+)h/.exec(el.textContent)[1])>=120))
   assert.ok([...document.querySelectorAll('.basin-place-labels text')].every(el=>/^[A-Z]{3,4}$/.test(el.textContent)))
-  await click('.ep-product-tabs button','機率預報');assert.match(document.querySelector('svg').textContent,/N=4/);assert.equal(document.querySelector('.probability-mean-legend'),null)
-  assert.match(document.querySelector('svg > desc').textContent,/All-system union/);assert.match(document.querySelector('svg > title').textContent,/120–312h/)
+  await click('.ep-product-tabs button','概率预报');assert.match(document.querySelector('svg').textContent,/N=4/);assert.equal(document.querySelector('.probability-mean-legend'),null)
+  assert.match(document.querySelector('svg > desc').textContent,/全部系统取并集/);assert.match(document.querySelector('svg > title').textContent,/120–312h/)
   await click('.ep-storm-tabs button','WP292026');assert.ok(document.querySelectorAll('.potential-mean line').length>0)
-  await set('[aria-label="Potential cyclone"]','genesis:0:7');assert.equal(document.querySelector('svg'),null);assert.match(document.querySelector('.ep-warning').textContent,/單成員生成候選/)
-  await click('.ep-product-tabs button','系集預報');assert.equal(document.querySelectorAll('.potential-member-peaks > text').length,1)
+  await set('[aria-label="Potential cyclone"]','genesis:0:7');assert.equal(document.querySelector('svg'),null);assert.match(document.querySelector('.ep-warning').textContent,/单成员生成候选/)
+  await click('.ep-product-tabs button','系集预报');assert.equal(document.querySelectorAll('.potential-member-peaks > text').length,1)
   await set('[aria-label="Potential model"]','wn3');assert.ok(requests.some(u=>u.searchParams.get('model')==='WNV3'));assert.match(document.querySelector('svg > title').textContent,/WN3C/)
   await set('[aria-label="Potential start hour"]',168,'input');await set('[aria-label="Potential end hour"]',240,'input');assert.match(document.querySelector('svg > title').textContent,/168–240h/)
   const svg=serializeChart(document.querySelector('svg'));assert.ok(!/NaN|Infinity/.test(svg));assert.match(svg,/168–240h/)
@@ -97,9 +97,9 @@ await test('WM-6 includes real unmatched tracks but cannot give one candidate 10
   await set('[aria-label="Potential model"]','wm6');await click('.ep-storm-tabs button','全部');assert.equal(document.querySelectorAll('.potential-member-peaks > text').length,3)
   assert.match(document.querySelector('.ep-method').textContent,/2026-10-22 00:00:00 UTC/)
   assert.match(document.querySelector('.basin-track-lines').textContent,/56\.9 kt · 949\.8 hPa/)
-  await click('.ep-product-tabs button','機率預報');assert.match(document.querySelector('svg').textContent,/N=128/)
-  await set('[aria-label="Potential cyclone"]',genesis);assert.equal(document.querySelector('svg'),null);assert.match(document.querySelector('.ep-warning').textContent,/單成員生成候選/)
-  await click('.ep-product-tabs button','系集預報');assert.equal(document.querySelectorAll('.potential-mean line').length,0)
+  await click('.ep-product-tabs button','概率预报');assert.match(document.querySelector('svg').textContent,/N=128/)
+  await set('[aria-label="Potential cyclone"]',genesis);assert.equal(document.querySelector('svg'),null);assert.match(document.querySelector('.ep-warning').textContent,/单成员生成候选/)
+  await click('.ep-product-tabs button','系集预报');assert.equal(document.querySelectorAll('.potential-mean line').length,0)
  }finally{app.unmount()}
 })
 await test('CSV contains only the selected window/region and exact values; hidden workspace releases modal scroll lock',async t=>{
@@ -119,6 +119,7 @@ await test('Internal medium-range route preserves both the existing storm contro
  t.mock.method(globalThis,'fetch',fixtureFetch)
  window.location.hash='#main-content';const app=createApp(App);app.mount('#app');await settle()
  try{
+  document.querySelector('.current-native-guidance').open=true;document.querySelector('.current-native-guidance').dispatchEvent(new dom.window.Event('toggle'));await settle();
   const lead=document.querySelector('[aria-label="Maximum forecast lead hours"]');lead.value='120';lead.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await settle()
   window.location.hash='#weather-tools/extended';await settle();assert.ok(document.querySelector('.ep-layout'));await set('[aria-label="Potential start hour"]',168,'input')
   window.location.hash='#main-content';await settle();assert.equal(lead.value,'120');assert.equal(document.querySelector('.tools-surface').style.display,'none')

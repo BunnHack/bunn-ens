@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { chartPng, serializeChart } from '../data/chart-image'
+import { zhHans } from '../data/zh-hans'
 const props = defineProps<{ filename: string; title?: string }>()
 const root = ref<HTMLElement | null>(null)
 const viewport = ref<HTMLElement | null>(null)
@@ -65,12 +66,12 @@ onBeforeUnmount(() => { disposed = true; if (enlarged.value) document.body.style
 </script>
 
 <template>
-  <section ref="root" class="chart-frame" :class="{ 'chart-frame-enlarged': enlarged }" :role="enlarged ? 'dialog' : 'region'" :aria-modal="enlarged ? true : undefined" :aria-label="title || '預報圖表'" @keydown="keydown">
-    <div class="chart-actions"><button class="chart-expand" @click="toggleEnlarged">{{ enlarged ? '關閉大圖' : '放大地圖' }}</button><button aria-label="Zoom out chart" :disabled="zoom <= 1" @click="zoom = Math.max(1, zoom - .25)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button aria-label="Zoom in chart" :disabled="zoom >= 4" @click="zoom = Math.min(4, zoom + .25)">＋</button><button @click="resetZoom">重設</button><button class="chart-save-svg" @click="saveSvg">下載 SVG</button><button class="chart-save-png" :disabled="exporting" @click="savePng">{{ exporting ? '轉換中…' : '下載 PNG' }}</button></div>
-    <p class="chart-help">可縮放至 400%；放大後可拖曳或觸控捲動。下載保留完整圖表與原始長寬比例。</p>
+  <section ref="root" class="chart-frame" :class="{ 'chart-frame-enlarged': enlarged }" :role="enlarged ? 'dialog' : 'region'" :aria-modal="enlarged ? true : undefined" :aria-label="title || '预报图表'" @keydown="keydown">
+    <div class="chart-actions"><button class="chart-expand" @click="toggleEnlarged">{{ enlarged ? '关闭大图' : '放大地图' }}</button><button aria-label="Zoom out chart" :disabled="zoom <= 1" @click="zoom = Math.max(1, zoom - .25)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button aria-label="Zoom in chart" :disabled="zoom >= 4" @click="zoom = Math.min(4, zoom + .25)">＋</button><button @click="resetZoom">重设</button><button class="chart-save-svg" @click="saveSvg">下载 SVG</button><button class="chart-save-png" :disabled="exporting" @click="savePng">{{ exporting ? '转换中…' : '下载 PNG' }}</button></div>
+    <p class="chart-help">可缩放至 400%；放大后可拖曳或触控滚动。下载保留完整图表与原始长宽比例。</p>
     <div ref="viewport" class="chart-viewport" :class="{ 'chart-draggable': zoom > 1 }" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="drag = null" @pointercancel="drag = null" @lostpointercapture="drag = null"><div class="chart-canvas" :style="{ width: `${zoom * 100}%` }"><slot /></div></div>
-    <p v-if="error" class="chart-export-error" role="alert">{{ error }}</p>
-    <div v-if="preview" class="chart-png-preview"><p>手機可長按圖片儲存。<a :href="preview" :download="`${filename}.png`">下載圖片</a> <button @click="preview = ''">關閉預覽</button></p><img :src="preview" :alt="`${title || '預報圖表'} PNG，可長按儲存`" /></div>
+    <p v-if="error" class="chart-export-error" role="alert">{{ zhHans(error) }}</p>
+    <div v-if="preview" class="chart-png-preview"><p>手机可长按图片储存。<a :href="preview" :download="`${filename}.png`">下载图片</a> <button @click="preview = ''">关闭预览</button></p><img :src="preview" :alt="`${title || '预报图表'} PNG，可长按储存`" /></div>
   </section>
 </template>
 

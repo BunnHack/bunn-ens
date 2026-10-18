@@ -51,7 +51,7 @@ await test('Basin plot renders independent pressure-colored tracks, global coast
   } finally { app.unmount() }
   const empty = createApp({ render: () => h(Plot, { catalog: { ...catalog, points: [] }, region: basinRegions.find(r => r.id === 'au'), theme: 'light' }) }); empty.mount('#app')
   try {
-    assert.match(document.querySelector('svg').textContent, /沒有 0–312h/)
+    assert.match(document.querySelector('svg').textContent, /没有 0–312h/)
     assert.ok(!/NaN|Infinity/.test(document.querySelector('svg').outerHTML))
   } finally { empty.unmount() }
 })
@@ -91,7 +91,7 @@ await test('WNC2 run selection, themes, basin filtering and CSV export use actua
   try {
     await clickText('.basin-model-list button', 'WN2C')
     assert.ok(calls.some(url => /model=FNV3P1&cycle=latest/.test(url)))
-    assert.match(document.querySelector('.basin-status').textContent, /已連接/)
+    assert.match(document.querySelector('.basin-status').textContent, /已连接/)
     assert.equal(document.querySelectorAll('.basin-pressure-points circle').length, 4)
     await clickText('.basin-buttons button', '北大西洋')
     assert.equal(document.querySelectorAll('.basin-pressure-points circle').length, 2)

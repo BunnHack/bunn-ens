@@ -10,11 +10,12 @@ export const overviewModels = [
 ] as const
 export type OverviewPoint = { lat: number; lon: number; leadHours: number; count?: number; windMs?: number | null; pressureHpa?: number | null; validTime?: string }
 export type OverviewTrack = { model: PotentialModel | AiModel | import('./model-tracks').ExtraModel; label: string; color: string; initialization: string; forecastZero: string; source: 'remote' | 'snapshot'; points: OverviewPoint[]; kind?: 'ensemble' | 'single' | 'derived'; identity?: string; initializationLabel?: string; baseLabel?: string; provenance?: string }
-export function focusTrackRegion(points: ReadonlyArray<Pick<TrackPoint, 'lon' | 'lat'>>, fallback: BasinRegion): BasinRegion {
+export function focusTrackRegion(points: ReadonlyArray<Pick<TrackPoint, 'lon' | 'lat'>>, fallback: BasinRegion, context = 1): BasinRegion {
   if (!points.length) return fallback
   const reference=points[0]!.lon, lons=points.map(p=>reference+((p.lon-reference+540)%360+360)%360-180), lats=points.map(p=>p.lat)
   const west=Math.min(...lons), east=Math.max(...lons), south=Math.min(...lats), north=Math.max(...lats)
-  const dx=Math.max(3,(east-west)*.15),dy=Math.max(3,(north-south)*.15)
+  const padding=Number.isFinite(context)?Math.max(1,Math.min(4,context)):1
+  const dx=Math.max(3,(east-west)*.15)*padding,dy=Math.max(3,(north-south)*.15)*padding
   return {id:'focused-storm',label:'系統聚焦圖域（外圍成員可能超出圖域）',west:Math.floor((west-dx)/2)*2,east:Math.ceil((east+dx)/2)*2,south:Math.max(-85,Math.floor((south-dy)/2)*2),north:Math.min(85,Math.ceil((north+dy)/2)*2)}
 }
 export function overviewTracks(results: Partial<Record<PotentialModel, PotentialResult>>, cyclone: string): { base: string; tracks: OverviewTrack[] } {

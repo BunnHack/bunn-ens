@@ -49,10 +49,10 @@ await test('Probability SVG has actual contours, mean and city point badges, exp
   assert.equal(document.querySelector('.potential-member-peaks'),null)
   assert.equal(document.querySelectorAll('.potential-mean line').length,1)
   assert.match(document.querySelector('.passage-city-labels').textContent,/台中 50%/)
-  assert.match(document.querySelector('.passage-city-labels title').textContent,/台中 市中心點/)
+  assert.match(document.querySelector('.passage-city-labels title').textContent,/台中 市中心点/)
   assert.ok(document.querySelectorAll('.basin-place-labels text').length>0);assert.ok([...document.querySelectorAll('.basin-place-labels text')].every(node=>/[\u3400-\u9fff]/.test(node.textContent)));assert.ok([...document.querySelectorAll('.passage-city-labels > g')].every(node=>Number(/,(\d+)\)/.exec(node.getAttribute('transform'))[1])>900));assert.equal(document.querySelector('.passage-probability-contours path').getAttribute('fill-opacity'),'.72');assert.ok(document.querySelector('.probability-coast-outline path'))
   const svg=serializeChart(document.querySelector('svg'))
-  assert.match(svg,/Local estimate, not official/);assert.match(svg,/N=4/);assert.match(svg,/120 km/)
+  assert.match(svg,/本地估计，非官方/);assert.match(svg,/N=4/);assert.match(svg,/120公里/)
   assert.match(svg,/Natural Earth 1:50m/);assert.ok(!/NaN|Infinity/.test(svg))
  }finally{app.unmount()}
 })
@@ -65,15 +65,15 @@ await test('Probability UI uses WM-6 ens_size, adjustable window and export cont
  const app=createApp(Panel,{mode:'typhoon'});app.mount('#app')
  try{
   const click=async(sel,text)=>{[...document.querySelectorAll(sel)].find(e=>e.textContent.includes(text)).click();await settle()}
-  await click('.basin-model-list button','WM-6');await click('.potential-products button','機率預報')
+  await click('.basin-model-list button','WM-6');await click('.potential-products button','概率预报')
   assert.ok(document.querySelector('.passage-probability-contours'))
   assert.match(document.querySelector('.probability-method').textContent,/完整系集 128/)
   assert.match(document.querySelector('svg').textContent,/N=128/)
   assert.ok(document.querySelector('.chart-save-svg'));assert.ok(document.querySelector('.chart-save-png'))
   const slider=document.querySelector('[aria-label="Probability maximum forecast hour"]');slider.value='6';slider.dispatchEvent(new dom.window.Event('input',{bubbles:true}));await settle()
   assert.match(document.querySelector('.probability-method').textContent,/0–6h/)
-  const select=document.querySelector('[aria-label="氣旋與單成員生成路徑"]');select.value=genesis;select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await settle()
-  assert.equal(document.querySelector('svg'),null);assert.match(document.querySelector('.probability-unavailable').textContent,/不能顯示為 100%/)
+  const select=document.querySelector('[aria-label="气旋与单成员生成路径"]');select.value=genesis;select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await settle()
+  assert.equal(document.querySelector('svg'),null);assert.match(document.querySelector('.probability-unavailable').textContent,/不能显示为 100%/)
  }finally{app.unmount()}
 })
 dom.window.close()

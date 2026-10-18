@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { zhHans } from '../data/zh-hans'
 import { REFRESH_MS } from '../data/wnc2'
 import { basinCsv, basinRegions, pointInRegion, type MapTheme } from '../data/basin'
 import { cycloneCatalog, cycloneChoices, cycloneMean, cycloneRegion, isUnmatchedWm6Id, loadPotential, potentialModels, type PotentialModel, type PotentialResult } from '../data/potential'
@@ -107,56 +108,56 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
 </script>
 
 <template>
-  <section class="basin-viewer" :data-theme="theme" :aria-label="title">
-    <div class="basin-top"><a href="#weather-tools">← Weather Tools</a><h1 tabindex="-1">{{ title }}</h1><span>實際系集路徑 · 0–312h</span></div>
+  <section class="basin-viewer" :data-theme="theme" :aria-label="zhHans(title)">
+    <div class="basin-top"><a href="#weather-tools">← Weather Tools</a><h1 tabindex="-1">{{ zhHans(title) }}</h1><span>实际系集路径 · 0–312h</span></div>
     <div class="basin-layout">
-      <aside class="basin-sidebar basin-panel" aria-label="台風預報模式選單">
-        <h2>台風預報</h2>
-        <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ section }}</summary><template v-if="section === '主要模式預報'"><p><a href="#weather-tools/overview">預報洋區總覽 →</a></p><p><a href="#weather-tools/extended">中遠期襲擊潛勢 →</a></p><p><a href="#forecast-models">WM-6 全球格點預報 →</a></p></template><p v-else>此分類產品尚未接入。</p></details>
+      <aside class="basin-sidebar basin-panel" aria-label="台风预报模式选单">
+        <h2>台风预报</h2>
+        <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ zhHans(section) }}</summary><template v-if="zhHans(section) === '主要模式预报'"><p><a href="#weather-tools/overview">预报洋区总览 →</a></p><p><a href="#weather-tools/extended">中远期袭击潜势 →</a></p><p><a href="#forecast-models">WM-6 全球格点预报 →</a></p></template><p v-else>此分类产品尚未接入。</p></details>
         <details v-for="group in (['basin', 'typhoon'] as const)" :key="group" :open="mode === group" class="basin-section" :class="{ 'basin-model-list': mode === group }">
-          <summary @click="navigateMode($event, group)">{{ group === 'basin' ? '洋區潛勢預報' : '台風潛勢預報' }}</summary>
-          <template v-if="mode === group"><button v-for="item in potentialModels" :key="item.id" :class="{ active: model === item.id }" :aria-pressed="model === item.id" @click="chooseModel(item.id)">{{ item.label }} {{ group === 'basin' ? '全球洋區' : '台風襲擊潛勢' }}<small>{{ item.status }}</small></button></template>
-          <a v-else :href="'#weather-tools/' + group">進入{{ group === 'basin' ? '洋區' : '台風' }}潛勢預報 →</a>
+          <summary @click="navigateMode($event, group)">{{ zhHans(group === 'basin' ? '洋区潜势预报' : '台风潜势预报') }}</summary>
+          <template v-if="mode === group"><button v-for="item in potentialModels" :key="item.id" :class="{ active: model === item.id }" :aria-pressed="model === item.id" @click="chooseModel(item.id)">{{ zhHans(item.label) }} {{ zhHans(group === 'basin' ? '全球洋区' : '台风袭击潜势') }}<small>{{ zhHans(item.status) }}</small></button></template>
+          <a v-else :href="'#weather-tools/' + group">进入{{ zhHans(group === 'basin' ? '洋区' : '台风') }}潜势预报 →</a>
         </details>
       </aside>
 
       <div class="basin-chart-panel basin-panel">
-        <p v-if="loading" class="basin-status" role="status">正在載入 {{ selectedModel.label }} 所選時次與成員路徑…</p>
-        <div v-else-if="error" class="basin-error" role="alert"><h2>無法載入此時次</h2><p>{{ error }}</p><button @click="refresh">重試</button></div>
-        <div v-else-if="!supported" class="basin-empty"><h2>{{ selectedModel.label }} 尚未接入</h2><p>不會以其他模式或舊圖片代替。</p><button @click="chooseModel('wn3')">查看 WNC3 預報</button></div>
-        <div v-else-if="mode === 'typhoon' && ['sst', 'heat'].includes(forecastType)" class="basin-empty"><h2>{{ products.find(item => item.id === forecastType)?.label }} 尚未接入</h2><p>目前資料源不含海溫或海洋熱焓場，不以風速或氣壓替代。</p><button @click="forecastType = 'ensemble'">返回系集預報</button></div>
-        <div v-else-if="forecastType === 'probability' && probability.error" class="basin-empty probability-unavailable" role="status"><h2>此路徑不能計算系集機率</h2><p>{{ probability.error }}</p><button @click="forecastType = 'ensemble'">返回系集預報</button></div>
+        <p v-if="loading" class="basin-status" role="status">正在载入 {{ zhHans(selectedModel.label) }} 所选时次与成员路径…</p>
+        <div v-else-if="error" class="basin-error" role="alert"><h2>无法载入此时次</h2><p>{{ zhHans(error) }}</p><button @click="refresh">重试</button></div>
+        <div v-else-if="!supported" class="basin-empty"><h2>{{ zhHans(selectedModel.label) }} 尚未接入</h2><p>不会以其他模式或旧图片代替。</p><button @click="chooseModel('wn3')">查看 WNC3 预报</button></div>
+        <div v-else-if="mode === 'typhoon' && ['sst', 'heat'].includes(forecastType)" class="basin-empty"><h2>{{ zhHans(products.find(item => item.id === forecastType)?.label) }} 尚未接入</h2><p>目前资料源不含海温或海洋热焓场，不以风速或气压替代。</p><button @click="forecastType = 'ensemble'">返回系集预报</button></div>
+        <div v-else-if="forecastType === 'probability' && probability.error" class="basin-empty probability-unavailable" role="status"><h2>此路径不能计算系集概率</h2><p>{{ zhHans(probability.error) }}</p><button @click="forecastType = 'ensemble'">返回系集预报</button></div>
         <template v-else-if="result && plotted">
-          <ChartFrame v-if="active" :filename="chartFilename" :title="`${selectedModel.label} ${selectedStorm || region.label} 預報圖`"><BasinPlot v-if="chartCatalog" :catalog="chartCatalog" :region="probability.field?.region ?? mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon' && forecastType === 'ensemble'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="plottedMean" :mean-label="meanLabel" :time-anchor="result.wm6?.forecastZero ?? ''" :probability="probability.field ?? undefined" /></ChartFrame>
-          <p v-if="probability.field" class="basin-data-note probability-method">本站計算的 120 km 通過比例，非官方襲擊／登陸／損害機率。時窗 0–{{ probabilityLead }}h；分母為完整系集 {{ probability.field.denominator }} 個成員，當前時窗有 {{ probability.field.trackedMembers }} 個成員追蹤到此氣旋，每個成員每個位置最多計一次。{{ model === 'wm6' ? '分母使用供應商 ens_size。' : '分母取整份全球 CSV 出現的成員數，不按氣旋／時窗縮減；若來源缺漏整個成員，比例可能偏高。' }}以球面短弧內插連續路徑，超過 12 小時缺口不連接；未追蹤／缺失成員不計命中，並不代表無風險。等值線網格約 {{ probability.field.step.toFixed(2) }}°，不是供應商 cone；城市標籤指市中心點 120 km 內，不是全縣市覆蓋率。預設圖域聚焦 ≥5% 通過區，可切換完整成員圖域。</p>
-          <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ result.source === 'snapshot' ? '離線快照 · 未確認為最新資料' : model === 'wm6' ? '已連接 WM-6 真實成員路徑' : '已連接 WeatherNext CSV' }} · {{ currentTime }} · {{ visiblePoints.length }} 個預報點 · 0–{{ forecastType === 'probability' ? probabilityLead : 312 }}h</p>
-          <p v-if="result.wm6" class="basin-data-note wm6-track-counts">本次上游：{{ result.wm6.matchedCount }} 個匹配氣旋、{{ result.wm6.unmatchedCount }} 條未匹配成員路徑。當前圖中：{{ wm6Counts.matched }} 個匹配氣旋、{{ wm6Counts.unmatched }} 條未匹配路徑。{{ includeUnofficial ? '未匹配路徑是單一成員的生成候選，不代表同樣數目的獨立風暴，也不保證成颱；未自動併入命名氣旋。' : '未匹配路徑已隱藏。' }} 時效基準：{{ result.wm6.forecastZero }}。</p>
+          <ChartFrame v-if="active" :filename="chartFilename" :title="zhHans(`${selectedModel.label} ${selectedStorm || region.label} 预报图`)"><BasinPlot v-if="chartCatalog" :catalog="chartCatalog" :region="probability.field?.region ?? mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon' && forecastType === 'ensemble'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="plottedMean" :mean-label="meanLabel" :time-anchor="result.wm6?.forecastZero ?? ''" :probability="probability.field ?? undefined" /></ChartFrame>
+          <p v-if="probability.field" class="basin-data-note probability-method">本站计算的 120 km 通过比例，非官方袭击／登陆／损害概率。时窗 0–{{ zhHans(probabilityLead) }}h；分母为完整系集 {{ zhHans(probability.field.denominator) }} 个成员，当前时窗有 {{ zhHans(probability.field.trackedMembers) }} 个成员追踪到此气旋，每个成员每个位置最多计一次。{{ zhHans(model === 'wm6' ? '分母使用供应商 ens_size。' : '分母取整份全球 CSV 出现的成员数，不按气旋／时窗缩减；若来源缺漏整个成员，比例可能偏高。') }}以球面短弧内插连续路径，超过 12 小时缺口不连接；未追踪／缺失成员不计命中，并不代表无风险。等值线网格约 {{ zhHans(probability.field.step.toFixed(2)) }}°，不是供应商 cone；城市标签指市中心点 120 km 内，不是全县市覆盖率。预设图域聚焦 ≥5% 通过区，可切换完整成员图域。</p>
+          <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ zhHans(result.source === 'snapshot' ? '离线快照 · 未确认为最新资料' : model === 'wm6' ? '已连接 WM-6 真实成员路径' : '已连接 WeatherNext CSV') }} · {{ zhHans(currentTime) }} · {{ zhHans(visiblePoints.length) }} 个预报点 · 0–{{ zhHans(forecastType === 'probability' ? probabilityLead : 312) }}h</p>
+          <p v-if="result.wm6" class="basin-data-note wm6-track-counts">本次上游：{{ zhHans(result.wm6.matchedCount) }} 个匹配气旋、{{ zhHans(result.wm6.unmatchedCount) }} 条未匹配成员路径。当前图中：{{ zhHans(wm6Counts.matched) }} 个匹配气旋、{{ zhHans(wm6Counts.unmatched) }} 条未匹配路径。{{ zhHans(includeUnofficial ? '未匹配路径是单一成员的生成候选，不代表同样数目的独立风暴，也不保证成台；未自动并入命名气旋。' : '未匹配路径已隐藏。') }} 时效基准：{{ zhHans(result.wm6.forecastZero) }}。</p>
           <Wm6DataAudit v-if="result.wm6" :points="visiblePoints" :forecast-zero="result.wm6.forecastZero" />
-          <p v-if="result.warning" class="basin-data-note" role="status">{{ result.warning }}</p>
-          <p v-if="mode === 'typhoon' && forecastType === 'ensemble'" class="basin-data-note">顏色使用原始風速與本站風級，未放大強度。{{ model === 'wm6' ? selectedKind === 'unmatched' ? '此為未匹配單成員路徑，沒有系集平均線。' : '深色線為供應商平均路徑。' : '深色線為本站計算的平均路徑，僅保留至少 25% 成員存在的時效；數字 genesis ID 僅屬單一成員，不跨成員合併。' }}</p>
-          <a v-if="result.url" class="basin-source" :href="result.url" target="_blank" rel="noopener noreferrer">原始{{ model === 'wm6' ? 'JSON' : 'CSV' }} 資料來源 ↗</a>
+          <p v-if="result.warning" class="basin-data-note" role="status">{{ zhHans(result.warning) }}</p>
+          <p v-if="mode === 'typhoon' && forecastType === 'ensemble'" class="basin-data-note">颜色使用原始风速与本站风级，未放大强度。{{ zhHans(model === 'wm6' ? selectedKind === 'unmatched' ? '此为未匹配单成员路径，没有系集平均线。' : '深色线为供应商平均路径。' : '深色线为本站计算的平均路径，仅保留至少 25% 成员存在的时效；数字 genesis ID 仅属单一成员，不跨成员合并。') }}</p>
+          <a v-if="result.url" class="basin-source" :href="result.url" target="_blank" rel="noopener noreferrer">原始{{ zhHans(model === 'wm6' ? 'JSON' : 'CSV') }} 资料来源 ↗</a>
         </template>
       </div>
 
-      <aside class="basin-controls basin-panel" aria-label="預報控制台">
+      <aside class="basin-controls basin-panel" aria-label="预报控制台">
         <h2>控制台</h2>
-        <button v-if="mode === 'basin'" class="basin-csv" :disabled="!supported || loading || !visiblePoints.length" @click="downloadCsv">下載目前洋區CSV文件</button>
-        <label class="basin-run">起報時間<select v-model="runChoice" :disabled="!supported" aria-label="洋區起報時間"><option value="latest">最新已發布時次 (UTC)</option><option v-for="run in availableRuns" :key="run.value" :value="run.value">{{ run.label }}</option></select></label>
-        <label v-if="model === 'wm6'" class="wm6-unofficial-toggle"><input v-model="includeUnofficial" type="checkbox" @change="refresh" /> 顯示未匹配成員路徑（生成候選）</label>
+        <button v-if="mode === 'basin'" class="basin-csv" :disabled="!supported || loading || !visiblePoints.length" @click="downloadCsv">下载目前洋区CSV文件</button>
+        <label class="basin-run">起报时间<select v-model="runChoice" :disabled="!supported" aria-label="洋区起报时间"><option value="latest">最新已发布时次 (UTC)</option><option v-for="run in availableRuns" :key="run.value" :value="run.value">{{ zhHans(run.label) }}</option></select></label>
+        <label v-if="model === 'wm6'" class="wm6-unofficial-toggle"><input v-model="includeUnofficial" type="checkbox" @change="refresh" /> 显示未匹配成员路径（生成候选）</label>
         <template v-if="mode === 'typhoon'">
-          <fieldset class="potential-products"><legend>預報類型</legend><div class="basin-buttons"><button v-for="product in products" :key="product.id" :class="{ selected: forecastType === product.id }" :aria-pressed="forecastType === product.id" @click="forecastType = product.id">{{ product.label }}</button></div></fieldset>
-          <label v-if="forecastType === 'probability'" class="probability-window">120 km 通過比例 · 時窗 0–{{ probabilityLead }}h<input v-model.number="probabilityLead" type="range" min="0" max="312" step="6" aria-label="Probability maximum forecast hour" /></label>
-          <label v-if="forecastType === 'probability'" class="wm6-unofficial-toggle"><input v-model="probabilityFullExtent" type="checkbox" aria-label="Show full probability map extent" /> 顯示完整成員圖域（預設聚焦 ≥5% 通過區）</label>
-          <fieldset class="potential-storms"><legend>台風編號 / 單成員生成路徑</legend><div class="basin-buttons"><button v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :class="{ selected: selectedStorm === option.key }" :aria-pressed="selectedStorm === option.key" @click="selectedStorm = option.key">{{ option.key }}</button></div><label v-if="options.some(item => item.kind !== 'matched')" class="basin-run">其他生成候選（獨立單成員）<select v-model="selectedStorm" aria-label="氣旋與單成員生成路徑"><optgroup label="已匹配氣旋"><option v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :value="option.key">{{ option.label }}</option></optgroup><optgroup label="未匹配 / 單成員生成路徑"><option v-for="option in options.filter(item => item.kind !== 'matched')" :key="option.key" :value="option.key">{{ option.label }}</option></optgroup></select></label><p v-if="!options.length" class="basin-help">目前沒有可選氣旋。</p></fieldset>
+          <fieldset class="potential-products"><legend>预报类型</legend><div class="basin-buttons"><button v-for="product in products" :key="product.id" :class="{ selected: forecastType === product.id }" :aria-pressed="forecastType === product.id" @click="forecastType = product.id">{{ zhHans(product.label) }}</button></div></fieldset>
+          <label v-if="forecastType === 'probability'" class="probability-window">120 km 通过比例 · 时窗 0–{{ zhHans(probabilityLead) }}h<input v-model.number="probabilityLead" type="range" min="0" max="312" step="6" aria-label="Probability maximum forecast hour" /></label>
+          <label v-if="forecastType === 'probability'" class="wm6-unofficial-toggle"><input v-model="probabilityFullExtent" type="checkbox" aria-label="Show full probability map extent" /> 显示完整成员图域（预设聚焦 ≥5% 通过区）</label>
+          <fieldset class="potential-storms"><legend>台风编号 / 单成员生成路径</legend><div class="basin-buttons"><button v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :class="{ selected: selectedStorm === option.key }" :aria-pressed="selectedStorm === option.key" @click="selectedStorm = option.key">{{ zhHans(option.key) }}</button></div><label v-if="options.some(item => item.kind !== 'matched')" class="basin-run">其他生成候选（独立单成员）<select v-model="selectedStorm" aria-label="气旋与单成员生成路径"><optgroup label="已匹配气旋"><option v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :value="option.key">{{ zhHans(option.label) }}</option></optgroup><optgroup label="未匹配 / 单成员生成路径"><option v-for="option in options.filter(item => item.kind !== 'matched')" :key="option.key" :value="option.key">{{ zhHans(option.label) }}</option></optgroup></select></label><p v-if="!options.length" class="basin-help">目前没有可选气旋。</p></fieldset>
         </template>
         <template v-else>
-          <fieldset><legend>主題選擇</legend><div class="basin-buttons"><button v-for="item in ([['light', '淺色'], ['color', '彩色'], ['dark', '深色']] as const)" :key="item[0]" :class="{ selected: theme === item[0] }" :aria-pressed="theme === item[0]" @click="theme = item[0]">{{ item[1] }}</button></div></fieldset>
-          <fieldset><legend>洋區選擇</legend><div class="basin-buttons"><button v-for="item in basinRegions" :key="item.id" :class="{ selected: regionId === item.id }" :aria-pressed="regionId === item.id" @click="regionId = item.id">{{ item.label }}</button></div></fieldset>
+          <fieldset><legend>主题选择</legend><div class="basin-buttons"><button v-for="item in ([['light', '浅色'], ['color', '彩色'], ['dark', '深色']] as const)" :key="item[0]" :class="{ selected: theme === item[0] }" :aria-pressed="theme === item[0]" @click="theme = item[0]">{{ zhHans(item[1]) }}</button></div></fieldset>
+          <fieldset><legend>洋区选择</legend><div class="basin-buttons"><button v-for="item in basinRegions" :key="item.id" :class="{ selected: regionId === item.id }" :aria-pressed="regionId === item.id" @click="regionId = item.id">{{ zhHans(item.label) }}</button></div></fieldset>
         </template>
-        <div class="basin-current"><h3>當前選擇</h3><p>類型: {{ selectedModel.label }}{{ mode === 'basin' ? ' 全球洋區' : '台風襲擊潛勢' }}</p><p>起報: {{ currentTime }}</p><template v-if="mode === 'typhoon'"><p>預報: {{ products.find(item => item.id === forecastType)?.label }}</p><p>台風: {{ selectedStorm || '尚無資料' }}</p></template><p v-else>洋區: {{ region.label }}</p><p v-if="result">來源: {{ result.source === 'remote' ? '線上資料' : '離線快照' }}</p></div>
-        <button v-if="mode === 'typhoon'" class="basin-csv potential-export" :disabled="forecastType !== 'ensemble' || loading || !visiblePoints.length" @click="downloadCsv">下載氣旋 CSV</button>
-        <button class="basin-info" :aria-expanded="showInfo" aria-controls="basin-explanation" @click="showInfo = !showInfo">ⓘ <span>資料說明</span></button>
-        <p v-if="showInfo" id="basin-explanation" class="basin-help">WN3C 使用 Google WNV3，WN2C 使用 FNV3P1。WM-6 預設 include_unofficial_ids=true：匹配氣旋讀取 members_path；未匹配系統依 API 定義使用其單成員 path，成員編號來自供應商 generated ID 的 _M 尾碼，不識別的 ID 則另查 detail。各路徑保留原始 ID、固定同一起報時間，不合併到命名氣旋，未畫錐形或登陸點。跨時次 index 不是當次預報；本圖只使用所選 initialization。最新模式每 5 分鐘檢查；手動時次不自動切換。只顯示 0–312h，以 forecast_zero 為時效基準，不生成缺失位置或增強風速。洋區圓圈依 hPa 著色；氣旋圖依原始 kt 分級。查詢時次不保證上游已發布。WeatherNext 資料遵循原始來源條款，≥1小時資料適用 CC BY 4.0。生成候選不代表官方成颱機率。</p>
+        <div class="basin-current"><h3>当前选择</h3><p>类型: {{ zhHans(selectedModel.label) }}{{ zhHans(mode === 'basin' ? ' 全球洋区' : '台风袭击潜势') }}</p><p>起报: {{ zhHans(currentTime) }}</p><template v-if="mode === 'typhoon'"><p>预报: {{ zhHans(products.find(item => item.id === forecastType)?.label) }}</p><p>台风: {{ zhHans(selectedStorm || '尚无资料') }}</p></template><p v-else>洋区: {{ zhHans(region.label) }}</p><p v-if="result">来源: {{ zhHans(result.source === 'remote' ? '线上资料' : '离线快照') }}</p></div>
+        <button v-if="mode === 'typhoon'" class="basin-csv potential-export" :disabled="forecastType !== 'ensemble' || loading || !visiblePoints.length" @click="downloadCsv">下载气旋 CSV</button>
+        <button class="basin-info" :aria-expanded="showInfo" aria-controls="basin-explanation" @click="showInfo = !showInfo">ⓘ <span>资料说明</span></button>
+        <p v-if="showInfo" id="basin-explanation" class="basin-help">WN3C 使用 Google WNV3，WN2C 使用 FNV3P1。WM-6 预设 include_unofficial_ids=true：匹配气旋读取 members_path；未匹配系统依 API 定义使用其单成员 path，成员编号来自供应商 generated ID 的 _M 尾码，不识别的 ID 则另查 detail。各路径保留原始 ID、固定同一起报时间，不合并到命名气旋，未画锥形或登陆点。跨时次 index 不是当次预报；本图只使用所选 initialization。最新模式每 5 分钟检查；手动时次不自动切换。只显示 0–312h，以 forecast_zero 为时效基准，不生成缺失位置或增强风速。洋区圆圈依 hPa 著色；气旋图依原始 kt 分级。查询时次不保证上游已发布。WeatherNext 资料遵循原始来源条款，≥1小时资料适用 CC BY 4.0。生成候选不代表官方成台概率。</p>
       </aside>
     </div>
   </section>

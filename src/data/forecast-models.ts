@@ -5,6 +5,11 @@ export const forecastProducts = [
   { id: 'wind', group: 'Lower Dynamics', label: '10m Wind / MSLP' },
   { id: 'upper', group: 'Upper Dynamics', label: '500 hPa Height / Temperature' },
   { id: 'temperature', group: 'Thermodynamics', label: '2m Temperature' },
+  { id: 'dewpoint', group: 'Thermodynamics', label: '2m Dewpoint' },
+  { id: 'cape', group: 'Thermodynamics', label: 'CAPE' },
+  { id: 'tcwv', group: 'Precip/Moisture', label: 'Total Column Water Vapour' },
+  { id: 'temperature850', group: 'Thermodynamics', label: '850 hPa Temperature' },
+  { id: 'wind250', group: 'Upper Dynamics', label: '250 hPa Wind Speed' },
 ] as const
 export const forecastRegions = [{ id: 'east-asia', label: 'East Asia' }, { id: 'west-pacific', label: 'West Pacific' }, { id: 'north-america', label: 'North America' }] as const
 export type ForecastProduct = typeof forecastProducts[number]['id']
@@ -83,7 +88,7 @@ export function publishedForecastBases(runs: ForecastRun[]): ForecastRun[] {
 }
 export function availableForecastFrames(run: ForecastRun | undefined, region: ForecastRegion, product: ForecastProduct): ForecastFrame[] { return run?.frames.filter(frame => frame.files[region]?.[product]) ?? [] }
 export function forecastAssetUrl(path: string): string {
-  if (!/^runs\/\d{8}T\d{4}Z\/(?:east-asia|west-pacific|north-america)\/(?:precip|wind|upper|temperature)\/(?:\d{3}\.(?:png|svgz?)|forecast\.gif|trend-\d{3}\.gif)$/.test(path)) throw new Error('不允許的圖資來源。')
+  if (!/^runs\/\d{8}T\d{4}Z\/(?:east-asia|west-pacific|north-america)\/(?:precip|wind|upper|temperature|dewpoint|cape|tcwv|temperature850|wind250)\/(?:\d{3}\.(?:png|svgz?)|forecast\.gif|trend-\d{3}\.gif)$/.test(path)) throw new Error('不允許的圖資來源。')
   return FORECAST_BASE + path
 }
 export async function forecastDownloadBlob(response: Response, path: string): Promise<Blob> {

@@ -13,6 +13,18 @@ RUN = {'initialization_time': '2026-10-18T05:00:00Z', 'forecast_zero': '2026-10-
 
 
 class ForecastVariableTests(unittest.TestCase):
+    def test_exhausted_total_quota_fails_once_without_retrying_or_exposing_body(self):
+        response = MagicMock(status_code=429, content=b'{"error":"Quota exceeded"}')
+        response.json.return_value = {'error': 'Quota exceeded', 'message': 'Free trial is limited to 2000 total requests. You have used 2000.'}
+        session = MagicMock()
+        session.get.return_value = response
+        with patch.object(wm6, '_next_api_request', 0), patch.object(wm6.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'total request quota exhausted'):
+                wm6.request(session, '/run_information')
+        session.get.assert_called_once()
+        response.close.assert_called_once()
+        sleep.assert_not_called()
+
     def test_native_field_names_levels_and_nine_distinct_products(self):
         self.assertEqual(len(wm6.PRODUCTS), 9)
         self.assertEqual(len({p['id'] for p in wm6.PRODUCTS}), 9)

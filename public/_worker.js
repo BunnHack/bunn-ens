@@ -296,9 +296,100 @@ export async function handleModelTracks(request, ctx, url) {
   }
 }
 
+const ZOOM_ID = /^[a-z0-9][a-z0-9-]{0,39}-20\d{2}$/;
+function zoomProjection(root, id) {
+  const pick = (obj, fields) => Object.fromEntries(fields.filter(k => obj?.[k] !== undefined).map(k => [k, obj[k]]));
+  if (!root || root.id !== id || typeof root.active !== 'boolean' || !Array.isArray(root.track) || !root.track.length || root.track.length > 600) throw new Error('Invalid source storm');
+  const data = pick(root, ['id','name','title','description','season','type','active','invest','disturbance','centroid','agencies','place','chance','chance2day','chance7day']);
+  for (const name of ['id','name','title','description','season','type','agencies','place','chance']) if (data[name] !== undefined && (typeof data[name] !== 'string' || data[name].length > 400)) throw new Error('Invalid source label');
+  data.track = root.track.map(p => {
+    if (!p || typeof p.date !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(p.date) || !Number.isFinite(Date.parse(p.date)) || new Date(p.date).toISOString().replace('.000Z','Z') !== p.date || !Array.isArray(p.coordinates) || p.coordinates.length !== 2 || typeof p.forecast !== 'boolean') throw new Error('Invalid source fix');
+    const [lon,lat] = p.coordinates;
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || lon < -180 || lon > 180 || lat < -90 || lat > 90) throw new Error('Invalid source coordinate');
+    for (const [key,min,max] of [['wind',0,250],['pressure',800,1100],['rank',-5,10]]) if (p[key] != null && (!Number.isFinite(p[key]) || p[key] < min || p[key] > max)) throw new Error('Invalid source value');
+    for (const key of ['description','basin','code']) if (p[key] !== undefined && (typeof p[key] !== 'string' || p[key].length > 200)) throw new Error('Invalid source fix label');
+    return pick(p, ['date','coordinates','wind','pressure','basin','forecast','rank','code','description']);
+  });
+  return data;
+}
+export async function handleCurrentStorms(request, ctx, url) {
+  if (request.method !== 'GET') return jsonError('GET required', 405);
+  if (url.search) return jsonError('Current storms do not accept query parameters', 400);
+  const key = new Request(new URL('/_internal/current-storms-v1', request.url));
+  const cache = globalThis.caches?.default;
+  const cached = cache && await cache.match(key);
+  if (cached) return new Response(cached.body, { headers: responseHeaders() });
+  const signal = AbortSignal.timeout(25000);
+  async function get(path) {
+    const response = await fetch('https://zoom.earth/data/' + path, { signal, redirect: 'manual', credentials: 'omit', headers: { accept: 'application/json', referer: 'https://zoom.earth/' } });
+    if (!response.ok) { await response.body?.cancel(); throw new Error('Source unavailable'); }
+    return JSON.parse(await boundedText(response));
+  }
+  try {
+    const clock = await get('time/');
+    if (!Number.isInteger(clock?.time) || clock.time < 1577836800 || clock.time > 4102444800) throw new Error('Invalid source clock');
+    const providerTime = new Date(clock.time * 1000).toISOString().replace('.000Z','Z');
+    const catalogDate = new Date(Math.floor(clock.time / 21600) * 21600000).toISOString().slice(0,16) + 'Z';
+    const list = await get('storms/?' + new URLSearchParams({ date: catalogDate, to: '12' }));
+    if (!Array.isArray(list?.storms) || !Array.isArray(list?.disturbances) || list.storms.length + list.disturbances.length > 20) throw new Error('Invalid source catalog');
+    const rows = [...list.storms.map(id => ({ id, kind: 'storm' })), ...list.disturbances.map(id => ({ id, kind: 'disturbance' }))];
+    if (rows.some(r => typeof r.id !== 'string' || !ZOOM_ID.test(r.id)) || new Set(rows.map(r => r.id)).size !== rows.length) throw new Error('Invalid source IDs');
+    const entries = [];
+    // Three at a time; a single shared deadline bounds the entire clock/catalog/detail transaction.
+    for (let i = 0; i < rows.length; i += 3) entries.push(...await Promise.all(rows.slice(i,i+3).map(async r => {
+      try { return { ...r, data: zoomProjection(await get('storms/?' + new URLSearchParams({ id: r.id, lang: 'zh' })), r.id), error: '' }; }
+      catch { return { ...r, data: null, error: '此来源系统暂时无法验证；不以其他气旋代替。' }; }
+    })));
+    if (entries.length && !entries.some(e => e.data)) throw new Error('No valid details');
+    const payload = JSON.stringify({ schema: 1, source: 'https://zoom.earth/', providerTime, catalogDate, checkedAt: new Date().toISOString().replace(/\.\d{3}Z$/,'Z'), windUnit: 'kt', pressureUnit: 'hPa', entries });
+    if (cache && entries.every(e => e.data)) ctx.waitUntil(cache.put(key, new Response(payload, { headers: { ...responseHeaders(), 'cache-control': 'public, max-age=300' } })));
+    return new Response(payload, { headers: responseHeaders() });
+  } catch { return jsonError('Zoom Earth current storms unavailable; no historical or model substitute supplied', 502); }
+}
+
+export async function handleIntensityAids(request, ctx, url) {
+  if (request.method !== 'GET') return jsonError('GET required', 405);
+  const storm = url.searchParams.get('storm');
+  if ([...url.searchParams.keys()].some(k => k !== 'storm') || url.searchParams.getAll('storm').length !== 1 || !/^(AL|EP|CP)(0[1-9]|[1-4]\d)20\d{2}$/.test(storm ?? '')) return jsonError('A public NHC AL/EP/CP cyclone ID is required', 400);
+  const source = 'https://ftp.nhc.noaa.gov/atcf/aid_public/a' + storm.toLowerCase() + '.dat.gz';
+  const key = new Request(new URL('/_internal/intensity-aids-v1/' + storm, request.url)), cache = globalThis.caches?.default;
+  const hit = cache && await cache.match(key);
+  if (hit) return new Response(hit.body, { headers: responseHeaders() });
+  try {
+    const response = await fetch(source, { redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(25000) });
+    if (!response.ok) { await response.body?.cancel(); throw new Error('Unavailable'); }
+    const reader = response.body?.getReader(); if (!reader) throw new Error('Empty archive');
+    const chunks = []; let total = 0;
+    try { while (true) { const {done,value} = await reader.read(); if (done) break; total += value.byteLength; if (total > 4*1024*1024) { await reader.cancel(); throw new Error('Archive too large'); } chunks.push(value); } } finally { reader.releaseLock(); }
+    const bytes = new Uint8Array(total); let cursor = 0; for (const c of chunks) { bytes.set(c,cursor); cursor += c.byteLength; }
+    let stream = new Blob([bytes]).stream();
+    if (bytes[0] === 31 && bytes[1] === 139) stream = stream.pipeThrough(new DecompressionStream('gzip'));
+    const input = stream.getReader(), decoder = new TextDecoder(); let pending = '', expanded = 0, latestCycle = '', rows = [];
+    function line(raw) {
+      if (raw.length > 4096) throw new Error('Invalid ATCF row');
+      const c = raw.split(',').slice(0,5).map(s=>s.trim());
+      if (!c[0]) return;
+      if (c[0] !== storm.slice(0,2) || c[1].padStart(2,'0') !== storm.slice(2,4) || !/^\d{10}$/.test(c[2]) || !c[2].startsWith(storm.slice(4))) throw new Error('ATCF identity mismatch');
+      if (c[2] > latestCycle) { latestCycle = c[2]; rows = []; }
+      if (c[2] === latestCycle) rows.push(raw);
+      if (rows.length > 15000) throw new Error('ATCF cycle too large');
+    }
+    try {
+      while (true) { const {done,value} = await input.read(); if (done) break; expanded += value.byteLength; if (expanded > 64*1024*1024) throw new Error('Expanded archive too large'); pending += decoder.decode(value,{stream:true}); let cut; while ((cut=pending.indexOf('\n')) !== -1) { line(pending.slice(0,cut).replace(/\r$/,'')); pending=pending.slice(cut+1); } if (pending.length > 4096) throw new Error('Invalid row'); }
+      pending += decoder.decode(); if (pending.trim()) line(pending);
+    } finally { await input.cancel().catch(()=>{}); input.releaseLock(); }
+    if (!rows.length || !latestCycle) throw new Error('No source cycle');
+    const payload = JSON.stringify({ storm, source, latestCycle, checkedAt: new Date().toISOString(), rows: rows.join('\n') });
+    if (cache) ctx.waitUntil(cache.put(key,new Response(payload,{headers:{...responseHeaders(),'cache-control':'public, max-age=300'}})));
+    return new Response(payload,{headers:responseHeaders()});
+  } catch { return jsonError('NHC intensity aids unavailable for this ID; no substitute model curves supplied',502); }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/current-storms') return handleCurrentStorms(request, ctx, url);
+    if (url.pathname === '/api/intensity-aids') return handleIntensityAids(request, ctx, url);
     if (url.pathname === '/api/model-tracks') return handleModelTracks(request, ctx, url);
     if (url.pathname === '/api/wmc') return handleWmc(request, env, ctx, url);
     if (url.pathname === '/api/wnc2') return handleWeatherNext(request, ctx, url);

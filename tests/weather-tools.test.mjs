@@ -39,18 +39,18 @@ try {
     for (const tool of weatherTools) {
       await navigate(`#weather-tools/${tool.id}`)
       if (tool.id === 'extended') {
-        assert.equal(document.querySelector('.extended-potential h1').textContent, '中遠期襲擊潛勢')
+        assert.equal(document.querySelector('.extended-potential h1').textContent, '中远期袭击潜势')
         assert.ok(document.querySelector('[aria-label="Potential start hour"]'))
         assert.equal(document.querySelector('.basin-workspace-tabs [aria-current="page"]').getAttribute('href'), '#weather-tools/extended')
-        assert.match(document.querySelector('.ep-method').textContent, /非官方襲擊／登陸／損害率/)
+        assert.match(document.querySelector('.ep-method').textContent, /非官方袭击／登陆／损害率/)
         continue
       }
       if (tool.id === 'basin') {
         assert.ok(document.querySelector('.basin-layout'))
-        assert.equal(document.querySelector('.basin-top h1').textContent, '洋區系集預報')
+        assert.equal(document.querySelector('.basin-top h1').textContent, '洋区系集预报')
         assert.equal(document.querySelector('.basin-reference'), null)
         assert.match(document.querySelector('.basin-model-list .active').textContent, /WN3C/)
-        assert.ok([...document.querySelectorAll('.basin-sidebar summary')].some(el => el.textContent.includes('台風潛勢預報')))
+        assert.ok([...document.querySelectorAll('.basin-sidebar summary')].some(el => el.textContent.includes('台风潜势预报')))
         assert.equal(document.querySelector('.basin-top a').getAttribute('href'), '#weather-tools')
         continue
       }

@@ -8,7 +8,7 @@ const visited=ref(new Set([props.section]))
 watch(()=>props.section,s=>{visited.value=new Set([...visited.value,s])})
 </script>
 <template>
-<section class="basin-workspace"><nav class="basin-workspace-tabs" aria-label="洋區系集預報功能"><strong>洋區系集預報</strong><a v-for="tab in [{id:'basin',label:'洋區系集'},{id:'extended',label:'中遠期襲擊潛勢'},{id:'overview',label:'預報洋區總覽'}]" :key="tab.id" :href="`#weather-tools/${tab.id}`" :aria-current="section===tab.id?'page':undefined">{{ tab.label }}</a></nav>
+<section class="basin-workspace"><nav class="basin-workspace-tabs" aria-label="洋区系集预报功能"><strong>洋区系集预报</strong><a v-for="tab in [{id:'basin',label:'洋区系集'},{id:'extended',label:'中远期袭击潜势'},{id:'overview',label:'预报洋区总览'}]" :key="tab.id" :href="`#weather-tools/${tab.id}`" :aria-current="section===tab.id?'page':undefined">{{ tab.label }}</a></nav>
 <BasinEnsemble v-if="visited.has('basin')" v-show="section==='basin'" :active="active&&section==='basin'" mode="basin"/>
 <ExtendedPotential v-if="visited.has('extended')" v-show="section==='extended'" :active="active&&section==='extended'"/>
 <TrackOverview v-if="visited.has('overview')" v-show="section==='overview'" :active="active&&section==='overview'"/>
