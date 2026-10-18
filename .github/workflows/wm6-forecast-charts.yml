@@ -53,6 +53,12 @@ jobs:
           path: .generated-site/forecast-models
           key: wm6-chart-history-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: wm6-chart-history-
+      - name: Preserve separately generated GEFS and AIGEFS charts on the shared Pages site
+        uses: actions/cache/restore@v4
+        with:
+          path: .generated-site/ncep-ensembles
+          key: ncep-chart-history-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ncep-chart-history-
       - name: Generate a new forecast base or repair its pinned native WM-6 version
         id: charts
         env:
@@ -66,6 +72,24 @@ jobs:
           args=()
           if [ "$FORCE" = "true" ]; then args+=(--force); fi
           python scripts/wm6_forecast.py --initialization "$INITIALIZATION" --max-hour "$MAX_HOUR" --hours "$HOURS" "${args[@]}"
+      - name: Refuse to remove a published NCEP chart tree after cache eviction
+        if: steps.charts.outputs.changed == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+          import urllib.error
+          from pathlib import Path
+          try:
+              with urllib.request.urlopen('https://bunnhack.github.io/bunn-ens/ncep-ensembles/index.json',timeout=30) as response:
+                  public=response.read(1_000_001)
+          except urllib.error.HTTPError as error:
+              if error.code!=404:raise
+          else:
+              path=Path('.generated-site/ncep-ensembles/index.json')
+              if len(public)>1_000_000 or not path.is_file() or json.loads(public)!=json.loads(path.read_text()):
+                  raise SystemExit('Published NCEP chart cache missing/different; refusing a WM-6-only site replacement')
+          PY
       - name: Configure GitHub Pages
         if: steps.charts.outputs.changed == 'true'
         uses: actions/configure-pages@v5
