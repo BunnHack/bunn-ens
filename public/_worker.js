@@ -355,16 +355,17 @@ export async function handleIntensityAids(request, ctx, url) {
   const key = new Request(new URL('/_internal/intensity-aids-v1/' + storm, request.url)), cache = globalThis.caches?.default;
   const hit = cache && await cache.match(key);
   if (hit) return new Response(hit.body, { headers: responseHeaders() });
-  try {
-    const response = await fetch(source, { redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(25000) });
+  const controller = new AbortController(); let timer, activeReader;
+  const operation = async () => {
+    const response = await fetch(source, { redirect: 'manual', credentials: 'omit', signal: controller.signal });
     if (!response.ok) { await response.body?.cancel(); throw new Error('Unavailable'); }
-    const reader = response.body?.getReader(); if (!reader) throw new Error('Empty archive');
+    const reader = response.body?.getReader(); activeReader = reader; if (!reader) throw new Error('Empty archive');
     const chunks = []; let total = 0;
     try { while (true) { const {done,value} = await reader.read(); if (done) break; total += value.byteLength; if (total > 4*1024*1024) { await reader.cancel(); throw new Error('Archive too large'); } chunks.push(value); } } finally { reader.releaseLock(); }
     const bytes = new Uint8Array(total); let cursor = 0; for (const c of chunks) { bytes.set(c,cursor); cursor += c.byteLength; }
     let stream = new Blob([bytes]).stream();
     if (bytes[0] === 31 && bytes[1] === 139) stream = stream.pipeThrough(new DecompressionStream('gzip'));
-    const input = stream.getReader(), decoder = new TextDecoder(); let pending = '', expanded = 0, latestCycle = '', rows = [];
+    const input = stream.getReader(), decoder = new TextDecoder(); let pending = '', expanded = 0, latestCycle = '', rows = []; activeReader = input;
     function line(raw) {
       if (raw.length > 4096) throw new Error('Invalid ATCF row');
       const c = raw.split(',').slice(0,5).map(s=>s.trim());
@@ -378,11 +379,16 @@ export async function handleIntensityAids(request, ctx, url) {
       while (true) { const {done,value} = await input.read(); if (done) break; expanded += value.byteLength; if (expanded > 64*1024*1024) throw new Error('Expanded archive too large'); pending += decoder.decode(value,{stream:true}); let cut; while ((cut=pending.indexOf('\n')) !== -1) { line(pending.slice(0,cut).replace(/\r$/,'')); pending=pending.slice(cut+1); } if (pending.length > 4096) throw new Error('Invalid row'); }
       pending += decoder.decode(); if (pending.trim()) line(pending);
     } finally { await input.cancel().catch(()=>{}); input.releaseLock(); }
+    controller.signal.throwIfAborted();
     if (!rows.length || !latestCycle) throw new Error('No source cycle');
     const payload = JSON.stringify({ storm, source, latestCycle, checkedAt: new Date().toISOString(), rows: rows.join('\n') });
     if (cache) ctx.waitUntil(cache.put(key,new Response(payload,{headers:{...responseHeaders(),'cache-control':'public, max-age=300'}})));
     return new Response(payload,{headers:responseHeaders()});
+  };
+  try {
+    return await Promise.race([operation(), new Promise((_,reject) => { timer = setTimeout(() => { controller.abort(); void activeReader?.cancel().catch(()=>{}); reject(new Error('Archive deadline')); }, 25000); })]);
   } catch { return jsonError('NHC intensity aids unavailable for this ID; no substitute model curves supplied',502); }
+  finally { clearTimeout(timer); controller.abort(); }
 }
 
 export default {

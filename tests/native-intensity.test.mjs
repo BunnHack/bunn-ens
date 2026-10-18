@@ -30,6 +30,13 @@ await test('NHC Worker streams a gzip archive to one cycle, projects a fixed pub
  const response=await handleIntensityAids(new Request(u),ctx,u),data=await response.json();assert.equal(response.status,200);assert.equal(data.latestCycle,'2026101800');assert.equal(parseIntensityAids(data,'EP212026').aids.length,parseIntensityAids(fixture,'EP212026').aids.length);assert.equal(calls.length,1)
  u.search='?storm=EP212026&url=https://wrong.test';assert.equal((await handleIntensityAids(new Request(u),ctx,u)).status,400);u.search='?storm=WP292026';assert.equal((await handleIntensityAids(new Request(u),ctx,u)).status,400);u.search='?storm=EP212026';assert.equal((await handleIntensityAids(new Request(u,{method:'POST'}),ctx,u)).status,405)
 })
+await test('NHC whole-operation deadline cancels a stalled response body rather than leaving guidance pending indefinitely',async t=>{
+ const original=setTimeout;let cancelled=false,signal;
+ t.mock.method(globalThis,'setTimeout',(callback,ms,...args)=>original(callback,Math.min(ms,15),...args));
+ t.mock.method(globalThis,'fetch',async(_,options)=>{signal=options.signal;return new Response(new ReadableStream({cancel(){cancelled=true}}))});
+ const u=new URL('https://test.local/api/intensity-aids?storm=EP212026'),response=await handleIntensityAids(new Request(u),{waitUntil:()=>assert.fail('Timeout must not publish/cache')},u);
+ assert.equal(response.status,502);assert.equal(signal.aborted,true);assert.equal(cancelled,true);assert.match((await response.json()).error,/no substitute/)
+})
 await test('AI / SD3 / AIGFS intensity keeps original units, unknown N, provenance, stops and noncommercial credits',()=>{
  const zero='2026-10-17T18:00:00.000Z',points=[0,6].map(h=>({lat:12,lon:145,leadHours:h,validTime:new Date(Date.parse(zero)+h*3600000).toISOString(),windMs:38.94587466487593,pressureHpa:972.1253734458168}))
  const ai={checkedAt:zero,tracks:[{model:'FUXI',code:'20260131',name:'CHAMPI',forecastZero:zero,points,warnings:['HTTP / UTC warning']}]};const series=aiIntensity(ai,'20260131','wind');assert.equal(series[0].points[0].value,points[0].windMs);assert.equal(series[0].unit,'m/s');assert.equal(series[0].denominator,null);assert.equal(aiIntensity(ai,'20260130','wind').length,0)
