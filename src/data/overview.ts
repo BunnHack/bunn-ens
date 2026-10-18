@@ -1,4 +1,5 @@
-import type { MeanPoint, TrackPoint } from './wnc2'
+import type { TrackPoint } from './wnc2'
+import { aiModels, type AiModel, type AiTrack } from './wmc'
 import type { BasinRegion } from './basin'
 import { cycloneMean, type PotentialModel, type PotentialResult } from './potential'
 export const overviewModels = [
@@ -7,7 +8,8 @@ export const overviewModels = [
   { id: 'wm6', label: 'WM-6(M)', color: '#008d70' },
   { id: 'genc', label: 'GENC(M)', color: '#168bef' },
 ] as const
-export type OverviewTrack = { model: PotentialModel; label: string; color: string; initialization: string; forecastZero: string; source: 'remote' | 'snapshot'; points: MeanPoint[] }
+export type OverviewPoint = { lat: number; lon: number; leadHours: number; count?: number; windMs?: number | null; pressureHpa?: number | null; validTime?: string }
+export type OverviewTrack = { model: PotentialModel | AiModel; label: string; color: string; initialization: string; forecastZero: string; source: 'remote' | 'snapshot'; points: OverviewPoint[]; kind?: 'ensemble' | 'single'; identity?: string }
 export function focusTrackRegion(points: ReadonlyArray<Pick<TrackPoint, 'lon' | 'lat'>>, fallback: BasinRegion): BasinRegion {
   if (!points.length) return fallback
   const reference=points[0]!.lon, lons=points.map(p=>reference+((p.lon-reference+540)%360+360)%360-180), lats=points.map(p=>p.lat)
@@ -28,4 +30,11 @@ export function overviewTracks(results: Partial<Record<PotentialModel, Potential
   const anchor=Math.min(...rows.map(row=>Date.parse(row.forecastZero)))
   // Labels use one common UTC anchor, never equal +h from different model bases.
   return {base:new Date(anchor).toISOString(),tracks:rows.map(row=>({...row,points:row.points.map(p=>({...p,leadHours:p.leadHours+(Date.parse(row.forecastZero)-anchor)/3600000})).filter(p=>p.leadHours>=0&&p.leadHours<=312)}))}
+}
+export function addAiTracks(existing: {base:string;tracks:OverviewTrack[]}, ai: AiTrack[], identity: string): {base:string;tracks:OverviewTrack[]} {
+  if (!ai.length) return existing
+  const anchor = Math.min(...ai.map(t=>Date.parse(t.forecastZero)), ...(existing.base?[Date.parse(existing.base)]:[]))
+  const means = existing.tracks.map(t=>({...t,points:t.points.map(p=>({...p,leadHours:p.leadHours+(Date.parse(existing.base)-anchor)/3600000}))}))
+  const singles: OverviewTrack[] = ai.map(t=>({ model:t.model,label:aiModels.find(m=>m.id===t.model)!.label,color:aiModels.find(m=>m.id===t.model)!.color,initialization:t.forecastZero,forecastZero:t.forecastZero,source:'remote',kind:'single',identity:`WMC ${t.code} ${t.name} · ${identity}`,points:t.points.map(p=>({...p,leadHours:(Date.parse(p.validTime)-anchor)/3600000})) }))
+  return {base:new Date(anchor).toISOString(),tracks:[...means,...singles].map(t=>({...t,points:t.points.filter(p=>p.leadHours>=0&&p.leadHours<=312)})).filter(t=>t.points.length>0)}
 }

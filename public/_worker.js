@@ -214,9 +214,57 @@ async function handleWm6Availability(request, env, ctx, url) {
   }
 }
 
+const WMC_MODELS = ['FUXI', 'FENGQING', 'FENGWU', 'PANGU', 'AIFS', 'GRAPHCAST', 'FOURCASTNET'];
+const WMC_ROOT = 'http://ew4all.wmc-bj.net/EW4ALL/typh/api/cmes-typhoonOcean/api/tcRealtime/';
+// Legacy provider protocol only. Signing material is an encrypted runtime binding, never a client constant.
+export async function handleWmc(request, env, ctx, url, digest = bytes => crypto.subtle.digest('MD5', bytes)) {
+  if (request.method !== 'GET') return jsonError('Method not allowed', 405);
+  const code = url.searchParams.get('code');
+  if ([...url.searchParams.keys()].some(key => key !== 'code') || url.searchParams.getAll('code').length > 1 || (code !== null && !/^[12]\d{7}$/.test(code))) return jsonError('Invalid WMC cyclone query', 400);
+  let auth;
+  try { auth = JSON.parse(env.WMC_AUTH || '{}'); } catch { return jsonError('WMC AI source is not configured', 503); }
+  if (!/^[0-9]{1,16}$/.test(String(auth.id ?? '')) || typeof auth.encryption !== 'string' || auth.encryption.length < 16 || auth.encryption.length > 256) return jsonError('WMC AI source is not configured', 503);
+  const cache = globalThis.caches?.default;
+  const cacheKey = new Request(new URL('/_internal/wmc-ai-v1/' + (code ?? 'active'), request.url));
+  const cached = await cache?.match(cacheKey);
+  if (cached) return new Response(cached.body, { headers: responseHeaders() });
+  let stage = 'signature';
+  try {
+    const stamp = new Date(Date.now() + 8 * 3600000).toISOString().replace(/\D/g, '').slice(0, 14);
+    const text = String(auth.id) + stamp;
+    const signature = [...new Uint8Array(await digest(new TextEncoder().encode(text + auth.encryption)))].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const key = btoa(text + signature);
+    const upstreamUrl = new URL(WMC_ROOT + (code ? 'getTyphoonConversionByCode' : 'getActiveTyphoonByFcstType'));
+    upstreamUrl.searchParams.set(code ? 'querytyphoonByCode' : 'fcstTypeList', code ?? WMC_MODELS.join(','));
+    stage = 'fetch';
+    const response = await fetch(upstreamUrl.toString(), { headers: { accept: 'application/json', 'typhoon-access-key': key }, redirect: 'manual', signal: AbortSignal.timeout(25000) });
+    if (!response.ok) throw new Error('http_' + response.status);
+    stage = 'response_json';
+    const value = JSON.parse(await boundedText(response));
+    const rows = code ? value.data?.fcstList : value.data;
+    if (value.code !== 200 || !Array.isArray(rows) || rows.length > 200) throw new Error('envelope_' + (Number.isInteger(value.code) ? value.code : 'invalid'));
+    stage = 'validation';
+    const fields = ['datetime', 'validtime', 'fcsthour', 'handletime', 'lat', 'lon', 'pressure', 'windv', 'xuhao', 'tfbh', 'engname', 'fcsttype', 'zone'];
+    const entries = rows.filter(row => WMC_MODELS.includes(row.FCSTType) && row.typeCode === 4).map(row => {
+      if (code && String(row.xuhao) !== code) throw new Error('cyclone_mismatch');
+      const points = row[row.FCSTType];
+      if (!Array.isArray(points) || points.length > 2000) throw new Error('invalid_points');
+      return { FCSTType: row.FCSTType, xuhao: row.xuhao, cn: String(row.cn ?? '').slice(0, 60), cname: String(row.cname ?? '').slice(0, 60), enname: String(row.enname ?? '').slice(0, 60), time: row.time, points: points.map(point => Object.fromEntries(fields.filter(field => ['string', 'number'].includes(typeof point?.[field]) || point?.[field] === null).map(field => [field, point[field]]))) };
+    });
+    const payload = JSON.stringify({ entries, cycloneCode: code, checkedAt: new Date().toISOString(), source: upstreamUrl.toString(), transport: 'http' });
+    if (cache) ctx.waitUntil(cache.put(cacheKey, new Response(payload, { headers: { ...responseHeaders(), 'cache-control': `public, max-age=${CACHE_SECONDS}` } })));
+    return new Response(payload, { headers: responseHeaders() });
+  } catch (error) {
+    const reason = /^(?:http_\d{3}|envelope_(?:\d{3}|invalid)|cyclone_mismatch|invalid_points)$/.test(error?.message) ? error.message : stage;
+    console.error(JSON.stringify({ event: 'wmc_ai_failed', reason }));
+    return jsonError(`WMC AI source unavailable (${reason}); no substitute tracks supplied`, 502);
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/wmc') return handleWmc(request, env, ctx, url);
     if (url.pathname === '/api/wnc2') return handleWeatherNext(request, ctx, url);
     if (url.pathname === '/api/wm6') return handleWm6(request, env, ctx, url);
     if (url.pathname === '/api/wm6/availability') return handleWm6Availability(request, env, ctx, url);

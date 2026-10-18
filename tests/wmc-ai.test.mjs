@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict'
+import {test} from 'node:test'
+import {createHash} from 'node:crypto'
+import {JSDOM} from 'jsdom'
+import {handleWmc} from '../public/_worker.js'
+import {compileFile} from './compile.mjs'
+const dom=new JSDOM('<div id="app"></div>',{url:'https://example.test/'})
+for(const k of ['window','document','Element','HTMLElement','SVGElement','Node'])globalThis[k]=dom.window[k]
+const {createApp,h,ref,nextTick}=await import('vue')
+const {aiModels,parseAiResult,associateAi,loadAi,aiUtc}=await import(await compileFile('src/data/wmc.ts'))
+const {addAiTracks}=await import(await compileFile('src/data/overview.ts'))
+const {default:Panel}=await import(await compileFile('src/components/TrackOverview.vue'))
+const source='http://ew4all.wmc-bj.net/EW4ALL/typh/api/cmes-typhoonOcean/api/tcRealtime/getTyphoonConversionByCode'
+const checkedAt='2026-10-17T23:00:00Z',code='20260131',base='2026-10-17T12:00:00.000Z'
+const clone=x=>structuredClone(x),stamp=t=>new Date(t).toISOString().slice(0,19).replace('T',' ')
+function row(model='FUXI',hour=12){const zero=Date.parse(`2026-10-17T${hour}:00:00Z`);return{FCSTType:model,xuhao:Number(code),typeCode:4,enname:'CHAMPI',cname:'蔷琵',cn:model,time:zero/1000-28800,points:[0,6,12,24,42].map(lead=>({datetime:stamp(zero),validtime:stamp(zero+lead*3600000),fcsthour:lead,handletime:'2026-10-17 21:10:41',lat:13+lead/100,lon:145-lead/20,windv:26.8,pressure:lead===6?'':'982',xuhao:Number(code),fcsttype:model,engname:'CHAMPI',zone:'W'}))}}
+const payload=(entries=[row()])=>({entries,cycloneCode:code,source,transport:'http',checkedAt})
+const wm=()=>({details:{WP292026:{storm_name:'CHAMPI',forecast_zero:base,mean_path:row().points.map(p=>({valid_at:p.validtime.replace(' ','T')+'Z',forecast_hour:p.fcsthour,latitude:p.lat,longitude:p.lon}))}}})
+const settle=async()=>{await new Promise(r=>setTimeout(r,75));await nextTick()}
+await test('AI parser preserves seven distinct models, raw m/s/hPa, missing pressure and point-based UTC despite wrapper epoch mismatch',()=>{
+ const x=parseAiResult(payload(aiModels.map(m=>row(m.id,m.id==='AIFS'?18:12))),code);assert.equal(x.tracks.length,7);assert.equal(x.tracks[0].points[0].windMs,26.8);assert.equal(x.tracks[0].points[1].pressureHpa,null);assert.equal(x.tracks[0].forecastZero,base);assert.equal(x.tracks.find(t=>t.model==='AIFS').forecastZero,'2026-10-17T18:00:00.000Z');assert.match(x.tracks[0].warnings.join(''),/epoch/);assert.equal(aiUtc('2026-02-30 00:00:00'),'');assert.equal(aiUtc('2026-10-17 12:00:00'),base)
+})
+await test('AI rejects wrong source/ID, mixed cycles, invalid time/coordinates and conflicting fixes without inventing points or members',()=>{
+ assert.throws(()=>parseAiResult({...payload(),source:'https://evil.test'},code));assert.throws(()=>parseAiResult({...payload(),cycloneCode:'20260130'},code));
+ const mixed=row();mixed.points[1].datetime='2026-10-17 18:00:00';mixed.points[1].validtime='2026-10-18 00:00:00';assert.equal(parseAiResult(payload([mixed]),code).tracks.length,0)
+ const bad=row();bad.points.push({...bad.points[0],lat:22});bad.points[1].lat=100;bad.points[2].validtime='2026-10-20 00:00:00';bad.points.push({...bad.points[4],fcsthour:360});const r=parseAiResult(payload([bad]),code);assert.deepEqual(r.tracks[0].points.map(p=>p.leadHours),[24,42]);assert.equal(r.tracks[0].points[0].count,undefined)
+ const dup=row();assert.equal(parseAiResult(payload([dup,clone(dup)]),code).tracks.length,1);const conflicting=clone(dup);conflicting.points[0].lon=100;assert.equal(parseAiResult(payload([dup,conflicting]),code).tracks.length,0)
+})
+await test('Cross-source identity uses unique name/basin/two same-UTC early fixes, not WMC number suffix or geometric coincidence alone',()=>{
+ const c=parseAiResult(payload()),w=wm(),a=associateAi(c,w,'WP292026');assert.equal(a.code,code);assert.equal(a.atcfId,'WP292026');assert.match(a.rule,/非供應商/)
+ assert.equal(associateAi(c,w,'WP312026'),null);assert.equal(associateAi(c,undefined,'WP292026'),null)
+ const other=wm();other.details.WP292026.storm_name='OTHER';assert.equal(associateAi(c,other,'WP292026'),null)
+ const one=wm();one.details.WP292026.mean_path=[one.details.WP292026.mean_path[0],one.details.WP292026.mean_path[0]];assert.equal(associateAi(c,one,'WP292026'),null)
+ const distant=wm();distant.details.WP292026.mean_path.forEach(p=>p.longitude=100);assert.equal(associateAi(c,distant,'WP292026'),null)
+ const ambiguous=clone(c);ambiguous.tracks.push({...ambiguous.tracks[0],code:'20260199'});assert.equal(associateAi(ambiguous,w,'WP292026'),null)
+ const ids=wm();ids.details.WP302026=clone(ids.details.WP292026);assert.equal(associateAi(c,ids,'WP292026'),null)
+ const wrongZone=clone(c);wrongZone.tracks[0].basin='P';assert.equal(associateAi(wrongZone,w,'WP292026'),null)
+})
+await test('AI overlays align absolute UTC with existing means, preserve individual labels/IDs, and never create ensemble probabilities',()=>{
+ const ai=parseAiResult(payload([row('FUXI'),row('AIFS',18)])).tracks;const d=addAiTracks({base:'2026-10-17T18:00:00.000Z',tracks:[{model:'wn2',label:'WN2',forecastZero:'2026-10-17T18:00:00Z',points:[{leadHours:0,lat:13,lon:145,count:50}]}]},ai,'local checked identity');assert.equal(d.base,base);assert.equal(d.tracks[0].points[0].leadHours,6);assert.equal(d.tracks.find(t=>t.model==='AIFS').points[0].leadHours,6);assert.equal(d.tracks[1].kind,'single');assert.equal(d.tracks[1].points[0].windMs,26.8);assert.equal(d.tracks[1].points[0].count,undefined);assert.match(d.tracks[1].identity,/WMC 20260131/)
+})
+await test('Same-origin AI loader has no credentials or upstream URL in browser requests and refuses arbitrary codes',async()=>{
+ let count=0;const r=await loadAi(code,undefined,async(url,options)=>{count++;assert.equal(url,'/api/wmc?code='+code);assert.ok(!JSON.stringify(options).includes('typhoon-access-key'));return Response.json(payload())});assert.equal(r.tracks.length,1);await assert.rejects(loadAi('http://evil'),/編號/);assert.equal(count,1)
+})
+const auth={id:'42',encryption:'synthetic-test-only-secret'},digest=async bytes=>createHash('md5').update(bytes).digest()
+async function runtime(t,run){const original=globalThis.caches,entries=new Map(),pending=[],calls=[];globalThis.caches={default:{match:async k=>entries.get(k.url)?.clone(),put:async(k,r)=>entries.set(k.url,r)}};t.mock.timers.enable({apis:['Date'],now:new Date(checkedAt)});t.mock.method(console,'error',()=>{});t.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url,options});const r=row();return Response.json({code:200,data:url.includes('Conversion')?{fcstList:[{...r,[r.FCSTType]:r.points,FUXI_old:[{secret:'never-forward'}]}]}:[{...r,[r.FCSTType]:r.points}]})});const request=(query='',method='GET',env={WMC_AUTH:JSON.stringify(auth)})=>{const u=new URL('https://example.test/api/wmc'+query);return handleWmc(new Request(u,{method}),env,{waitUntil:p=>pending.push(p)},u,digest)};try{await run({request,calls,pending,entries});await Promise.all(pending)}finally{if(original===undefined)delete globalThis.caches;else globalThis.caches=original}}
+await test('Worker generates UTC+8 legacy signature privately per uncached request, strips history/internal fields and caches only public results',async t=>runtime(t,async({request,calls,pending})=>{
+ const r=await request('?code='+code);assert.equal(r.status,200);const j=await r.json();assert.equal(j.entries.length,1);assert.equal(j.entries[0].points.length,5);assert.ok(!JSON.stringify(j).includes('never-forward'));assert.ok(!JSON.stringify(j).includes(auth.encryption));assert.ok(!JSON.stringify(j).includes('typhoon-access-key'));const token=Buffer.from(calls[0].options.headers['typhoon-access-key'],'base64').toString();const prefix=auth.id+'20261018070000';assert.equal(token,prefix+createHash('md5').update(prefix+auth.encryption).digest('hex'));assert.equal(calls[0].options.redirect,'manual');assert.match(calls[0].url,/^http:\/\/ew4all.wmc-bj.net\/EW4ALL\//);await Promise.all(pending);await request('?code='+code);assert.equal(calls.length,1);t.mock.timers.tick(1000);await request();assert.equal(calls.length,2);assert.notEqual(calls[0].options.headers['typhoon-access-key'],calls[1].options.headers['typhoon-access-key'])
+}))
+await test('Worker rejects malformed queries/methods/config before upstream and never caches failed/mismatched authorization payloads',async t=>runtime(t,async({request,calls,entries})=>{
+ for(const q of ['?code=../../x','?code='+code+'&url=http://evil','?code='+code+'&code='+code])assert.equal((await request(q)).status,400);assert.equal((await request('','POST')).status,405);assert.equal((await request('','GET',{})).status,503);assert.equal(calls.length,0)
+ t.mock.method(globalThis,'fetch',async()=>Response.json({code:403,msg:auth.encryption,data:null}));const r=await request('?code='+code);assert.equal(r.status,502);assert.ok(!(await r.text()).includes(auth.encryption));assert.equal(entries.size,0)
+ t.mock.method(globalThis,'fetch',async()=>{const r=row();r.xuhao=20260130;return Response.json({code:200,data:{fcstList:[{...r,FUXI:r.points}]}})});assert.equal((await request('?code='+code)).status,502);assert.equal(entries.size,0)
+}))
+await test('Worker enforces upstream body bound and rejects redirects without forwarding credentials',async t=>runtime(t,async({request,entries})=>{t.mock.method(globalThis,'fetch',async()=>new Response('',{status:302,headers:{location:'https://other.invalid'}}));assert.equal((await request()).status,502);t.mock.method(globalThis,'fetch',async()=>new Response(new Uint8Array(10000001)));assert.equal((await request()).status,502);assert.equal(entries.size,0)}))
+await test('Overview renders seven separate AI curves with dynamic legend rows, missing-source honesty, toggles and retained inactive state',async t=>{
+ let calls=0;t.mock.method(globalThis,'fetch',async url=>{calls++;if(String(url).startsWith('/api/wmc'))return Response.json(payload(aiModels.map(m=>row(m.id,m.id==='AIFS'?18:12))));return new Response('',{status:502})});const active=ref(false),app=createApp({render:()=>h(Panel,{active:active.value})});app.mount('#app');await settle();assert.equal(calls,0);active.value=true;await settle();await settle();await settle();try{const select=document.querySelector('[aria-label="Overview cyclone"]');select.value='wmc:'+code;select.dispatchEvent(new window.Event('change',{bubbles:true}));await settle();await settle();assert.equal(document.querySelectorAll('.overview-model').length,7);assert.equal(document.querySelectorAll('[data-kind="single"]').length,7);assert.match(document.querySelector('svg desc').textContent,/no ensemble N\/probability/);assert.match(document.querySelector('svg').getAttribute('viewBox'),/1246$/);assert.equal(document.querySelectorAll('.overview-legend-entry').length,7);assert.equal(document.querySelector('.overview-model[data-model="FUXI"] line').getAttribute('stroke-dasharray'),'9 4');assert.ok(!/NaN|Infinity/.test(document.querySelector('svg').outerHTML));document.querySelector('[aria-label="Show AI FUXI"]').click();await settle();assert.equal(document.querySelector('.overview-model[data-model="FUXI"]'),null);const previous=calls;active.value=false;await settle();assert.equal(document.querySelector('svg'),null);active.value=true;await settle();assert.equal(calls,previous);assert.equal(document.querySelectorAll('.overview-model').length,6)}finally{app.unmount()}
+})

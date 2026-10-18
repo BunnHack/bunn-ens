@@ -3,7 +3,7 @@ type Entry = { promise: Promise<unknown>; controller: AbortController; users: nu
 const caches = new WeakMap<typeof fetch, Map<string, Entry>>()
 function keyFor(url: string) {
   const value = new URL(url, 'https://forecast.invalid')
-  if (value.origin !== 'https://forecast.invalid' || !/^\/api\/(wnc2|wm6)(?:\/|$)/.test(value.pathname)) throw new Error('Only same-origin public forecast JSON may be cached')
+  if (value.origin !== 'https://forecast.invalid' || !/^\/api\/(wnc2|wm6|wmc)(?:\/|$)/.test(value.pathname)) throw new Error('Only same-origin public forecast JSON may be cached')
   value.searchParams.sort(); return value.pathname + value.search
 }
 export function clearRequestCache(fetcher: typeof fetch = fetch, prefix = '') {
