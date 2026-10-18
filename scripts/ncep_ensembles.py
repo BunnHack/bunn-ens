@@ -414,7 +414,7 @@ def advance_lows(active,candidates,run,sample,hour):
         token=f'L_AIGEFS_{run:%Y%m%d%H}_M{sample:03d}_F{hour:03d}_{p["lat"]:.2f}_{p["lon"]:.2f}'
         next_active.append({'sample':sample,'trackId':token,'sourceId':token,'nativeMember':member_id('AIGEFS',sample),
                             'kind':'derived_low','sourceFile':f'{GRID}aigefs.{run:%Y%m%d}/{run:%H}/mem{sample:03d}/',
-                            'method':METHOD,'baseline':hour==0,'points':[p]})
+                            'method':'local-field-l-v1','baseline':hour==0,'points':[p]})
     return next_active,ended
 
 
@@ -439,15 +439,72 @@ def derived_member(run,sample,cache):
     return result,fields,failure
 
 
-def hybrid_dataset(payload,cache):
+def member_checkpoint(folder,run,sample,value=None):
+    """Compact verified tracks only; never save GRIB or authentication material."""
+    folder=Path(folder);path=folder/f'{run:%Y%m%dT%H%M%SZ}-M{sample:03d}.json'
+    fingerprint=hashlib.sha256(METHOD.encode()).hexdigest()
+    if value is not None:
+        tracks,count,error=value
+        payload={'schema':1,'generator':VERSION,'model':'AIGEFS','run':iso(run),'sample':sample,
+                 'methodSha256':fingerprint,'fields':count,'error':error,'tracks':tracks}
+        folder.mkdir(parents=True,exist_ok=True)
+        temporary=path.with_suffix('.tmp');temporary.write_text(json.dumps(payload,ensure_ascii=False,separators=(',',':'),allow_nan=False)+'\n');temporary.replace(path)
+        return value
+    if not path.is_file():
+        return None
+    if path.stat().st_size>2_000_000:
+        raise ValueError('Member checkpoint exceeds bounded compact budget')
+    data=json.loads(path.read_text())
+    if (data.get('schema')!=1 or data.get('generator')!=VERSION or data.get('model')!='AIGEFS'
+        or data.get('run')!=iso(run) or type(data.get('sample')) is not int or data.get('sample')!=sample or data.get('methodSha256')!=fingerprint
+        or data.get('fields')!=41 or data.get('error') or not isinstance(data.get('tracks'),list) or len(data['tracks'])>1500):
+        return None  # incomplete/different runs are recomputed from +0h, never joined
+    for track in data['tracks']:
+        prefix=f'L_AIGEFS_{run:%Y%m%d%H}_M{sample:03d}_F'
+        if (track.get('kind')!='derived_low' or type(track.get('sample')) is not int or track.get('sample')!=sample or track.get('nativeMember')!=member_id('AIGEFS',sample)
+            or not track.get('trackId','').startswith(prefix) or track.get('sourceId')!=track['trackId']
+            or track.get('sourceFile')!=f'{GRID}aigefs.{run:%Y%m%d}/{run:%H}/mem{sample:03d}/'
+            or track.get('method')!='local-field-l-v1' or not 2<=len(track.get('points',[]))<=41):
+            raise ValueError('Unverified member checkpoint identity/method')
+        previous=None
+        for point in track['points']:
+            hour=point.get('hour')
+            if type(hour) is not int or not 0<=hour<=240 or hour%6 or previous is not None and hour!=previous+6:
+                raise ValueError('Member checkpoint has a time gap or wrong lead')
+            previous=hour
+            for key,low,high,nullable in [('lat',-45,45,False),('lon',-180,180,False),('pressureHpa',800,1100,False),('windMs',0,200,True)]:
+                v=point.get(key)
+                if nullable and v is None:continue
+                if type(v) not in (int,float) or not math.isfinite(v) or not low<=v<=high:
+                    raise ValueError('Member checkpoint has invalid native point')
+            if point.get('windKt') is not None:
+                raise ValueError('Field speed cannot become tracker VMAX')
+        first=track['points'][0]
+        expected=f'{prefix}{first["hour"]:03d}_{first["lat"]:.2f}_{first["lon"]:.2f}'
+        if first['hour']==0 or abs(first['lat'])>35 or track['trackId']!=expected:
+            raise ValueError('Checkpoint birth is not the verified source field identity')
+    return data['tracks'],41,''
+
+
+def hybrid_dataset(payload,cache,checkpoint_dir=None,resume=False):
     if payload['model']!='AIGEFS':
         return payload
     run=parse_run(payload['run'])
     derived,counts,failures=[],[],[]
     native=[t for t in payload['tracks'] if t['kind']!='derived_low']
     omitted=0
+    def run_member(sample):
+        if resume and checkpoint_dir:
+            cached=member_checkpoint(checkpoint_dir,run,sample)
+            if cached is not None:
+                print(f'AIGEFS member {sample:03d}: reusing complete same-run verified compact checkpoint; no grid reread',flush=True)
+                return cached
+        value=derived_member(run,sample,cache)
+        if checkpoint_dir:
+            member_checkpoint(checkpoint_dir,run,sample,value)
+        return value
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        jobs={pool.submit(derived_member,run,m,cache):m for m in range(31)}
+        jobs={pool.submit(run_member,m):m for m in range(31)}
         for job in concurrent.futures.as_completed(jobs):
             m=jobs[job]
             tracks,count,error=job.result();counts.append(count)
@@ -471,7 +528,7 @@ def write_dataset(payload,out):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     model=payload['model'];key=f'{model}-{payload["run"].replace("-","").replace(":","")}.json'
     encoded=json.dumps(payload,ensure_ascii=False,separators=(',',':'),allow_nan=False)+'\n'
-    if len(encoded.encode())>8_000_000:
+    if len(encoded.encode())>16_000_000:
         raise ValueError('Compact public track budget exceeded')
     (out/key).write_text(encoded)
     (out/f'{model}.json').write_text(encoded)
@@ -486,6 +543,7 @@ def main():
     parser.add_argument('--cache',default='.ncep-grid-cache')
     parser.add_argument('--tracker-only',action='store_true')
     parser.add_argument('--hybrid-existing',action='store_true')
+    parser.add_argument('--resume-members',action='store_true',help='Reuse only explicitly restored complete, same-run compact checkpoints')
     args=parser.parse_args()
     for model in args.models:
         if args.hybrid_existing:
@@ -494,7 +552,7 @@ def main():
             run=discover(model) if args.run=='latest' else parse_run(args.run)
             payload=native_dataset(model,run)
         if not args.tracker_only:
-            payload=hybrid_dataset(payload,args.cache)
+            payload=hybrid_dataset(payload,args.cache,Path(args.out)/'field-members',args.resume_members)
         write_dataset(payload,args.out)
 
 

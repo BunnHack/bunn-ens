@@ -213,6 +213,62 @@ class ConservativeLowTests(unittest.TestCase):
         self.assertEqual(ncep.closed_lows(1000+np.minimum(radius/10000,.2),wind,lats,lons,6),[])
 
 
+class CompactCheckpointTests(unittest.TestCase):
+    """Explicitly synthetic fields exercise storage/resume, not real guidance."""
+    def setUp(self):self.run=ncep.parse_run('2026-10-18T06:00:00Z')
+
+    def track(self,sample=0):
+        active,_=ncep.advance_lows([],[low(6)],self.run,sample,6)
+        active,_=ncep.advance_lows(active,[low(12)],self.run,sample,12)
+        t=active[0];t.pop('baseline');return t
+
+    def test_compact_method_keeps_actual_field_values_and_full_definition(self):
+        t=self.track()
+        self.assertEqual(t['method'],'local-field-l-v1')
+        self.assertEqual(t['points'],[low(6),low(12)])
+        self.assertLess(len(t['method'].encode()),len(ncep.METHOD.encode())//10)
+
+    def test_complete_checkpoint_roundtrips_but_partial_or_different_method_is_not_resumed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            t=self.track();value=([t],41,'')
+            ncep.member_checkpoint(folder,self.run,0,value)
+            self.assertEqual(ncep.member_checkpoint(folder,self.run,0),value)
+            p=next(Path(folder).glob('*.json'));data=json.loads(p.read_text())
+            data['fields']=40;p.write_text(json.dumps(data))
+            self.assertIsNone(ncep.member_checkpoint(folder,self.run,0))
+            data['fields']=41;data['methodSha256']='wrong';p.write_text(json.dumps(data))
+            self.assertIsNone(ncep.member_checkpoint(folder,self.run,0))
+
+    def test_checkpoint_rejects_wrong_units_gap_and_member_identity(self):
+        for change in [lambda t:t['points'][0].update(windKt=22.1),lambda t:t['points'][1].update(hour=24),lambda t:t.update(nativeMember='A001')]:
+            with tempfile.TemporaryDirectory() as folder:
+                t=self.track();change(t)
+                ncep.member_checkpoint(folder,self.run,0,([t],41,''))
+                with self.assertRaises(ValueError):ncep.member_checkpoint(folder,self.run,0)
+
+    def test_full_31_member_checkpoints_survive_without_any_grid_reread(self):
+        payload={'model':'AIGEFS','run':ncep.iso(self.run),'tracks':[],'failures':[]}
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(ncep,'derived_member',side_effect=lambda run,m,cache:([self.track(m)],41,'')):
+                first=ncep.hybrid_dataset(payload,'unused',folder)
+            self.assertEqual(first['derived']['fields'],1271)
+            self.assertEqual(first['derived']['method'],ncep.METHOD)
+            self.assertEqual(len(list(Path(folder).glob('*.json'))),31)
+            with patch.object(ncep,'derived_member',side_effect=AssertionError('must not redownload verified member fields')):
+                resumed=ncep.hybrid_dataset(payload,'unused',folder,True)
+            self.assertEqual(first['tracks'],resumed['tracks'])
+            self.assertEqual(resumed['derived']['membersComplete'],31)
+
+    def test_publication_budget_is_bounded_but_does_not_repeat_the_old_8mb_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            payload={'model':'AIGEFS','run':ncep.iso(self.run),'tracks':[self.track()],'derived':{'status':'available'},
+                     'explicitlySyntheticBudgetPadding':'x'*8_100_000}
+            ncep.write_dataset(payload,folder)
+            self.assertEqual(json.loads((Path(folder)/'AIGEFS.json').read_text())['tracks'][0]['points'],[low(6),low(12)])
+            payload['explicitlySyntheticBudgetPadding']='x'*16_000_000
+            with self.assertRaisesRegex(ValueError,'budget'):ncep.write_dataset(payload,folder)
+
+
 def math_cos(degrees):
     import math
     return math.cos(math.radians(degrees))

@@ -13,6 +13,10 @@ on:
         type: choice
         options: [both, GEFS, AIGEFS]
         default: both
+      resume_run_id:
+        description: 'Optional completed MAIN run of THIS workflow with compact field-member checkpoints, never native grids'
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -24,6 +28,7 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: write
+      actions: read
     env:
       REQUESTED_RUN: ${{ inputs.initialization_time || 'latest' }}
       REQUESTED_MODELS: ${{ inputs.models || 'both' }}
@@ -37,6 +42,26 @@ jobs:
       - run: pip install -r scripts/requirements-tracks.txt
       - name: Test native ATCF, full denominator, no gap splicing and conservative field lows
         run: python -m unittest discover -s tests -p 'test_ncep_ensembles.py' -v
+      - name: Validate explicit recovery provenance before restoring compact checkpoints
+        if: inputs.resume_run_id != ''
+        uses: actions/github-script@v7
+        env:
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+        with:
+          script: |
+            const id=process.env.RESUME_RUN_ID;
+            if(!/^\d{1,12}$/.test(id))throw Error('Invalid recovery run ID');
+            const {owner,repo}=context.repo;
+            const current=(await github.rest.actions.getWorkflowRun({owner,repo,run_id:context.runId})).data;
+            const source=(await github.rest.actions.getWorkflowRun({owner,repo,run_id:Number(id)})).data;
+            if(source.workflow_id!==current.workflow_id||source.head_repository?.full_name!==`${owner}/${repo}`||source.head_branch!=='main'||source.status!=='completed'||!['schedule','workflow_dispatch'].includes(source.event))throw Error('Recovery must be this repository MAIN scheduled/manual workflow; no PR/fork or unverified artifacts');
+      - uses: actions/download-artifact@v4
+        if: inputs.resume_run_id != ''
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.resume_run_id }}
+          name: ncep-ensembles-${{ inputs.resume_run_id }}
+          path: .generated-ensembles
       - name: Fetch actual 31-member trackers and GEFS native genesis, never provider means
         run: |
           case "$REQUESTED_MODELS" in
@@ -76,7 +101,12 @@ jobs:
           PY
       - name: Add actual future-born AIGEFS closed field lows, all 31 members through 240h
         if: inputs.models != 'GEFS'
-        run: python scripts/ncep_ensembles.py --models AIGEFS --hybrid-existing
+        env:
+          RESUME_RUN_ID: ${{ inputs.resume_run_id || '' }}
+        run: |
+          args=()
+          if [ -n "$RESUME_RUN_ID" ]; then args+=(--resume-members); fi
+          python scripts/ncep_ensembles.py --models AIGEFS --hybrid-existing "${args[@]}"
       - name: Publish completed or explicitly partial hybrid coverage without replacing native tracker winds
         if: inputs.models != 'GEFS'
         uses: actions/github-script@v7
@@ -88,5 +118,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ncep-ensembles-${{ github.run_id }}
-          path: .generated-ensembles/*.json
+          path: |
+            .generated-ensembles/*.json
+            .generated-ensembles/field-members/*.json
+          include-hidden-files: true
           retention-days: 7

@@ -18,7 +18,7 @@ module.exports = async function publish({github, context, directory = '.generate
     if(!fs.existsSync(file)) continue;
     const content = fs.readFileSync(file,'utf8');
     const value = JSON.parse(content);
-    if(value.schema!==1 || value.generator!=='ncep-hybrid-v1' || value.model!==model || value.ensembleSize!==31 || !/^20\d{2}-\d\d-\d\dT(?:00|06|12|18):00:00Z$/.test(value.run) || !value.tracks.length || Buffer.byteLength(content)>8_000_000) throw Error('Invalid compact NCEP publication');
+    if(value.schema!==1 || value.generator!=='ncep-hybrid-v1' || value.model!==model || value.ensembleSize!==31 || !/^20\d{2}-\d\d-\d\dT(?:00|06|12|18):00:00Z$/.test(value.run) || !value.tracks.length || Buffer.byteLength(content)>16_000_000) throw Error('Invalid compact NCEP publication');
     let previous;
     try {
       const previousBlob = oldTree.find(f=>f.path===alias)?.sha;

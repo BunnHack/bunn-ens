@@ -91,8 +91,8 @@ def read_publication(model,source=None,data_ref='ensemble-track-data'):
         with urllib.request.urlopen(request,timeout=45) as response:
             if response.geturl()!=public+model+'.json':
                 raise ValueError('Unexpected publication redirect')
-            data=response.read(8_000_001)
-    if len(data)>8_000_000:
+            data=response.read(16_000_001)
+    if len(data)>16_000_000:
         raise ValueError('Compact publication budget')
     payload=json.loads(data)
     validate(payload,model)
