@@ -108,6 +108,35 @@ class NativeTrackerTests(unittest.TestCase):
         self.assertIsNone(ncep.duplicate_of_native({**gen,'points':[low(0)]},[native]))
         self.assertIsNone(ncep.duplicate_of_native({**gen,'points':[low(0,20),low(6,20)]},[native]))
 
+    def test_real_gefs_genesis_contains_both_tg_and_hc_without_inventing_tc_identity(self):
+        run=ncep.parse_run('2026-10-18T06:00:00Z')
+        tracks=ncep.parse_atcf((FIX/'genesis-mixed-ac00-2026101806.atcf').read_text(),'GEFS',run,0,True)
+        self.assertEqual({t['nativeBasin'] for t in tracks},{'TG','HC'})
+        hc=next(t for t in tracks if t['nativeBasin']=='HC')
+        self.assertEqual(hc['nativeStormNumber'],'01G')
+        self.assertEqual(hc['sourceId'],'2026101806_F000_104N_0713W_01G')
+        self.assertEqual(hc['points'][0]['windKt'],21)
+        self.assertEqual(hc['kind'],'genesis')
+
+    def test_analysis_last_pressure_message_is_not_mislabelled_missing(self):
+        ranges=ncep.field_ranges((FIX/'a000-f000.idx').read_text(),ncep.parse_run('2026-10-18T06:00:00Z'),0,0)
+        self.assertEqual(ranges['PRMSL'],(2157959,None))
+        self.assertEqual(ranges['VGRD'],(866982,1702274))
+
+    def test_open_ended_tail_still_requires_exact_206_content_range_and_length(self):
+        class Response:
+            status=206
+            headers={'Content-Range':'bytes 20-29/30'}
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self,n):return b'0123456789'
+        with patch.object(ncep._opener,'open',return_value=Response()),patch.object(ncep,'_next_request',0):
+            self.assertEqual(ncep.get(ncep.GRID+'test.grib2',20,(20,None)),b'0123456789')
+        Response.headers={'Content-Range':'bytes 20-28/30'}
+        with patch.object(ncep._opener,'open',return_value=Response()),patch.object(ncep,'_next_request',0):
+            with self.assertRaisesRegex(ValueError,'range'):
+                ncep.get(ncep.GRID+'test.grib2',20,(20,None))
+
 
 class ConservativeLowTests(unittest.TestCase):
     def setUp(self):

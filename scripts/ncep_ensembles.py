@@ -67,14 +67,19 @@ def get(url, limit=2_000_000, byte_range=None):
         _next_request = time.monotonic()+.7
     headers = {'User-Agent': 'Bunn-ENS-NOAA-public-tracks/1.0'}
     if byte_range is not None:
-        headers['Range'] = f'bytes={byte_range[0]}-{byte_range[1]}'
+        headers['Range'] = f'bytes={byte_range[0]}-{byte_range[1] if byte_range[1] is not None else ""}'
     with _opener.open(urllib.request.Request(url, headers=headers), timeout=45) as response:
+        expected_length=None
         if byte_range is not None:
-            expected = f'bytes {byte_range[0]}-{byte_range[1]}/'
-            if response.status != 206 or not response.headers.get('Content-Range', '').startswith(expected):
+            match=re.fullmatch(r'bytes (\d+)-(\d+)/(\d+)',response.headers.get('Content-Range',''))
+            if response.status!=206 or not match:
                 raise ValueError('Invalid exact NOAA byte range')
+            start,end,total=map(int,match.groups())
+            if start!=byte_range[0] or end!=(byte_range[1] if byte_range[1] is not None else total-1) or not start<=end<total:
+                raise ValueError('Invalid exact NOAA byte range')
+            expected_length=end-start+1
         data = response.read(limit+1)
-        if len(data) > limit or byte_range is not None and len(data) != byte_range[1]-byte_range[0]+1:
+        if len(data) > limit or expected_length is not None and len(data)!=expected_length:
             raise ValueError('Incomplete or oversized NOAA response')
         return data
 
@@ -123,7 +128,7 @@ def parse_atcf(text, model, run, sample, genesis=False):
     """Keep only 34-kt-radius rows; these are not a VMAX>=34 filter."""
     if genesis and model != 'GEFS':
         raise ValueError('AIGEFS does not publish the GEFS genesis format')
-    expected, rows, conflicts = member_id(model,sample), {}, set()
+    expected, rows, conflicts, native_keys = member_id(model,sample), {}, set(), {}
     for raw in text.splitlines():
         if not raw.strip():
             continue
@@ -145,7 +150,7 @@ def parse_atcf(text, model, run, sample, genesis=False):
             raise ValueError('Unexpected tracker cadence')
         if genesis:
             identity = a[2]
-            if a[0] != 'TG' or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identity):
+            if a[0] not in ('TG','HC') or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identity):
                 raise ValueError('Invalid native genesis identity')
         else:
             if a[0] not in ('AL','EP','CP','WP','IO','SH','SP','SI') or not re.fullmatch(r'\d{1,2}',a[1]) or not 1 <= int(a[1]) <= 99:
@@ -153,6 +158,7 @@ def parse_atcf(text, model, run, sample, genesis=False):
             identity = f'{a[0]}{int(a[1]):02d}{run:%Y}'
         p = {'hour':lead,'lat':coordinate(a[6+shift],True),'lon':coordinate(a[7+shift],False),
              'windKt':scalar(a[8+shift],1,250),'pressureHpa':scalar(a[9+shift],800,1100),'windMs':None}
+        native_keys[identity]=(a[0],a[1])
         key = (identity,lead)
         if key in rows and rows[key] != p:
             # Conflicting repeated quadrants never become an invented mean.
@@ -165,9 +171,10 @@ def parse_atcf(text, model, run, sample, genesis=False):
             continue
         tracks.setdefault(identity,[]).append(p)
     return [{'sample':sample,'trackId':identity,'sourceId':identity,'nativeMember':expected,
+             'nativeBasin':native_keys[identity][0],'nativeStormNumber':native_keys[identity][1],
              'kind':'genesis' if genesis else 'matched',
              'sourceFile':genesis_path(run,sample) if genesis else tracker_path(model,run,sample),
-             'method':'NCEP原生genesis tracker，非本站格点追踪' if genesis else 'NCEP原生已编号系统tracker；34kt半径行去重，VMAX原值kt',
+             'method':'NCEP原生genesis候选tracker，保留TG/HC类别，未判定为热带系统，非本站格点追踪' if genesis else 'NCEP原生已编号系统tracker；34kt半径行去重，VMAX原值kt',
              'points':sorted(points,key=lambda p:p['hour'])} for identity,points in sorted(tracks.items())]
 
 
@@ -268,9 +275,12 @@ def field_ranges(index,run,sample,hour):
     for i,(start,name,level,_,_) in enumerate(records):
         wanted=(name=='PRMSL' and level=='mean sea level') or (name in ('UGRD','VGRD') and level=='10 m above ground')
         if wanted:
-            if i+1==len(records) or name in found:
-                raise ValueError('Ambiguous or unbounded native GRIB field')
-            found[name]=(start,records[i+1][0]-1)
+            if name in found:
+                raise ValueError('Ambiguous native GRIB field')
+            # Analysis has no precipitation record: PRMSL is the final message.
+            # Its open-ended range is verified against the HTTP total and exact
+            # GRIB message length, never treated as absent or implicit zeros.
+            found[name]=(start,records[i+1][0]-1 if i+1<len(records) else None)
     if set(found)!={'PRMSL','UGRD','VGRD'}:
         raise ValueError('Missing pressure or native 10m wind field')
     return found
