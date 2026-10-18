@@ -36,6 +36,11 @@ PRODUCTS = [
     {'id': 'wind', 'label': '10m Wind / MSLP', 'group': 'Lower Dynamics'},
     {'id': 'upper', 'label': '500 hPa Height / Temperature', 'group': 'Upper Dynamics'},
     {'id': 'temperature', 'label': '2m Temperature', 'group': 'Thermodynamics'},
+    {'id': 'dewpoint', 'label': '2m Dewpoint', 'group': 'Thermodynamics'},
+    {'id': 'cape', 'label': 'CAPE', 'group': 'Thermodynamics'},
+    {'id': 'tcwv', 'label': 'Total Column Water Vapour', 'group': 'Precip/Moisture'},
+    {'id': 'temperature850', 'label': '850 hPa Temperature', 'group': 'Thermodynamics'},
+    {'id': 'wind250', 'label': '250 hPa Wind Speed', 'group': 'Upper Dynamics'},
 ]
 FIELDS = {
     'pressure_msl': ('pressure_msl', None),
@@ -43,10 +48,14 @@ FIELDS = {
     't500': ('temperature', 500), 'temperature_2m': ('temperature_2m', None),
     'wind_speed_10m': ('wind_speed_10m', None),
     'precip': ('total_precipitation_3h', None),
+    'dewpoint': ('dewpoint_2m', None), 'cape': ('cape', None),
+    'tcwv': ('total_column_water_vapour', None),
+    't850': ('temperature', 850), 'wind250': ('wind_speed', 250),
 }
 REQUIRED = {'precip': ['pressure_msl', 'z500', 'z1000', 'precip', 'previous_precip'],
             'wind': ['wind_speed_10m', 'pressure_msl'], 'upper': ['z500', 't500'],
-            'temperature': ['temperature_2m']}
+            'temperature': ['temperature_2m'], 'dewpoint': ['dewpoint'], 'cape': ['cape'],
+            'tcwv': ['tcwv'], 'temperature850': ['t850'], 'wind250': ['wind250']}
 
 
 def utc(value):
@@ -89,7 +98,10 @@ def convert_field(values, unit, kind):
         'pressure_msl': {'pa'}, 'z500': {'m2s-2', 'm^2s^-2', 'm2/s2'},
         'z1000': {'m2s-2', 'm^2s^-2', 'm2/s2'}, 't500': {'k'},
         'temperature_2m': {'k'}, 'wind_speed_10m': {'ms-1', 'm/s', 'ms^-1'},
-        'precip': {'mm'}, 'previous_precip': {'mm'},
+        'precip': {'mm'}, 'previous_precip': {'mm'}, 'dewpoint': {'k'}, 't850': {'k'},
+        'cape': {'jkg-1', 'jkg^-1', 'j/kg'},
+        'tcwv': {'kgm-2', 'kgm^-2', 'kg/m2', 'kg/m^2'},
+        'wind250': {'ms-1', 'm/s', 'ms^-1'},
     }
     if unit not in acceptable[kind]:
         raise ValueError(f'Unsupported units for {kind}')
@@ -98,9 +110,9 @@ def convert_field(values, unit, kind):
         return values / 100
     if kind in ('z500', 'z1000'):
         return values / G / 10  # geopotential -> geopotential height in decametres
-    if kind in ('t500', 'temperature_2m'):
+    if kind in ('t500', 'temperature_2m', 'dewpoint', 't850'):
         return values - 273.15
-    if kind == 'wind_speed_10m':
+    if kind in ('wind_speed_10m', 'wind250'):
         return values * 3600 / 1852  # native m/s -> kt; unrelated to cyclone max_wind_kt
     return values
 
@@ -215,16 +227,29 @@ def download_archive_fields(session, run, hour, keys):
             list(pool.map(fetch_part, parts))
         group = zarr.open_group(directory, mode='r')
         verify_metadata(dict(group.attrs), run, hour)
-        lat, lon = np.asarray(group['latitude'][:], dtype=float), np.asarray(group['longitude'][:], dtype=float)
+        def native_array(name):
+            array = group[name]
+            # Zarr fill_value=0 is not evidence for an unpublished/missing chunk.
+            for index in np.ndindex(tuple((n+c-1)//c for n, c in zip(array.shape, array.chunks))):
+                chunk = Path(directory) / name / 'c'
+                for coordinate in index:
+                    chunk = chunk / str(coordinate)
+                if not chunk.is_file() or not chunk.stat().st_size:
+                    raise ValueError('Native chunk missing; refusing implicit zero fill')
+            return array
+        lat, lon = np.asarray(native_array('latitude')[:], dtype=float), np.asarray(native_array('longitude')[:], dtype=float)
         result = {}
         for key, name in names.items():
-            array = group[f'ensemble_mean/{name}']
-            if array.attrs.get('product_type') != 'ensemble_mean' or array.shape != (len(lat), len(lon)):
-                raise ValueError('Unexpected archive grid/statistic')
-            values = convert_field(array[:], array.attrs['units'], key)
-            if not np.isfinite(values).any():
-                raise ValueError('Archive contains no valid field values')
-            result[key] = lat, lon, values
+            try:
+                array = native_array(f'ensemble_mean/{name}')
+                if array.attrs.get('product_type') != 'ensemble_mean' or array.shape != (len(lat), len(lon)):
+                    raise ValueError('Unexpected archive grid/statistic')
+                values = convert_field(array[:], array.attrs['units'], key)
+                if not np.isfinite(values).any():
+                    raise ValueError('Archive contains no valid field values')
+                result[key] = lat, lon, values
+            except (KeyError, ValueError):
+                print(f'Native field {key} unavailable or invalid; no fill/substitute field used.', flush=True)
         return result
 
 
@@ -342,7 +367,8 @@ def map_annotations(ax, region, centers):
 
 
 def render_chart(fields, region, product, run, hour, destination):
-    key = {'precip': 'precip', 'wind': 'wind_speed_10m', 'upper': 't500', 'temperature': 'temperature_2m'}[product]
+    key = {'precip': 'precip', 'wind': 'wind_speed_10m', 'upper': 't500', 'temperature': 'temperature_2m',
+           'dewpoint': 'dewpoint', 'cape': 'cape', 'tcwv': 'tcwv', 'temperature850': 't850', 'wind250': 'wind250'}[product]
     x, y, shaded = regional_grid(fields[key], region)
     fig, ax = plt.subplots(figsize=(14, 10), dpi=130)
     fig.subplots_adjust(left=.055, right=.925, bottom=.105, top=.87)
@@ -370,9 +396,26 @@ def render_chart(fields, region, product, run, hour, destination):
         _, _, z = regional_grid(fields['z500'], region)
         contour(ax, x, y, z, range(450, 631, 6), '#222222')
         title, label, interval = '500 hPa Geopotential Height (dam) & Temperature (°C)', 'Temperature\n°C', 'Geopotential converted to height with standard gravity 9.80665 m/s².'
-    else:
+    elif product == 'temperature':
         image = ax.contourf(x, y, shaded, levels=np.arange(-40, 51, 2), cmap='turbo', extend='both')
         title, label, interval = '2m Temperature (°C)', 'Temperature\n°C', 'Native temperature_2m ensemble mean; kelvin converted to Celsius.'
+    elif product == 'dewpoint':
+        image = ax.contourf(x, y, shaded, levels=np.arange(-40, 37, 2), cmap='BrBG', extend='both')
+        title, label, interval = '2m Dewpoint (°C)', 'Dewpoint\n°C', 'Native dewpoint_2m ensemble mean; kelvin converted to Celsius, not inferred from temperature.'
+    elif product == 'cape':
+        image = ax.contourf(x, y, shaded, levels=[0, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000], cmap='YlOrRd', extend='both')
+        title, label, interval = 'Convective Available Potential Energy (J/kg)', 'CAPE\nJ/kg', 'Native cape ensemble mean; parcel definition follows source, not relabelled SBCAPE/MLCAPE or storm probability.'
+    elif product == 'tcwv':
+        image = ax.contourf(x, y, shaded, levels=np.arange(0, 86, 5), cmap='YlGnBu', extend='both')
+        title, label, interval = 'Total Column Water Vapour (kg/m²)', 'Water vapour\nkg/m²', 'Native total_column_water_vapour ensemble mean, unchanged kg/m²; atmospheric column content, NOT precipitation accumulation.'
+    elif product == 'temperature850':
+        image = ax.contourf(x, y, shaded, levels=np.arange(-45, 41, 2), cmap='turbo', extend='both')
+        title, label, interval = '850 hPa Temperature (°C)', 'Temperature\n°C', 'Native temperature_850 ensemble mean at published 850 hPa; kelvin converted to Celsius, no vertical interpolation.'
+    elif product == 'wind250':
+        image = ax.contourf(x, y, shaded, levels=np.arange(0, 221, 10), cmap='turbo', extend='max')
+        title, label, interval = '250 hPa Wind Speed (kt)', 'Wind\nkt', 'Native separately trained wind_speed_250 ensemble mean; m/s converted to kt, not 10m/TC intensity or derived vector wind.'
+    else:
+        raise ValueError('Unknown forecast product')
     bar = fig.colorbar(image, ax=ax, fraction=.028, pad=.012, shrink=.94)
     bar.ax.tick_params(labelsize=8)
     bar.ax.set_title(label, fontsize=8, pad=10)
@@ -462,7 +505,7 @@ def build_animations(record, older, out):
             record['trends'][rid][pid] = trends
 
 
-GENERATOR_VERSION = 'native-zarr-v3-time'
+GENERATOR_VERSION = 'native-zarr-v4-variables'
 
 
 def frame_assets_complete(frame, record, out):
@@ -492,7 +535,7 @@ def cached_forecast_base(previous, forecast_zero, out):
     """A base selects one provider version; hourly provider changes do not replace it."""
     for record in previous.get('runs', []):
         try:
-            if record.get('generatorVersion') == GENERATOR_VERSION and utc(record['forecastZero']) == utc(forecast_zero) and record['id'] == run_id(record['initializationTime']) and (out / 'runs' / record['id']).is_dir():
+            if record.get('generatorVersion') in (GENERATOR_VERSION, 'native-zarr-v3-time') and utc(record['forecastZero']) == utc(forecast_zero) and record['id'] == run_id(record['initializationTime']) and (out / 'runs' / record['id']).is_dir():
                 return record
         except (KeyError, TypeError, ValueError):
             continue
@@ -575,6 +618,9 @@ def generate(args):
             fields.update(download_archive_fields(session, run, hour, selected))
         except (RuntimeError, ValueError, KeyError, OSError) as error:
             record['failures'].append({'hour': hour, 'field': 'ensemble_mean_archive', 'reason': str(error)[:160]})
+        for key in selected:
+            if key not in fields:
+                record['failures'].append({'hour': hour, 'field': key, 'reason': 'Native field absent or failed validation; no fill/substitute'})
         if 'precip' in fields:
             try:
                 fields.update(download_archive_fields(session, run, hour-3, ['previous_precip']))
@@ -584,13 +630,14 @@ def generate(args):
             first = next(iter(fields.values()))
             if any(not np.array_equal(first[0], field[0]) or not np.array_equal(first[1], field[1]) for field in fields.values()):
                 raise ValueError('Grid coordinates mismatch')
-        if not verified and 'pressure_msl' in fields:
-            reference = regional_grid(download_field(session, run, hour, 'pressure_msl'), {'bounds': [-180, 180, -90, 90]})
-            candidate = regional_grid(fields['pressure_msl'], {'bounds': [-180, 180, -90, 90]})
+        if not verified and fields:
+            reference_key = 'pressure_msl' if 'pressure_msl' in fields else next(iter(fields))
+            reference = regional_grid(download_field(session, run, hour, reference_key), {'bounds': [-180, 180, -90, 90]})
+            candidate = regional_grid(fields[reference_key], {'bounds': [-180, 180, -90, 90]})
             if any(not np.allclose(left, right, rtol=1e-6, atol=1e-6, equal_nan=True) for left, right in zip(reference, candidate)):
                 raise ValueError('Archive/NetCDF physical-value verification failed')
             verified = True
-            print('Native archive agrees with independently served NetCDF pressure and coordinates.', flush=True)
+            print(f'Native archive agrees with independently served NetCDF {reference_key} and coordinates.', flush=True)
         frame = {'hour': hour, 'validTime': iso(utc(run['forecast_zero']) + timedelta(hours=hour)), 'files': {}}
         for region in REGIONS:
             frame['files'][region['id']] = {}

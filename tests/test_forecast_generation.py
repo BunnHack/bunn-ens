@@ -75,13 +75,15 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(len({p['code'] for p in places}), len(places))
         self.assertTrue(all(p['code'].isascii() and p['code'].isupper() and p['enName'] for p in places))
 
-    def test_render_all_four_products_as_actual_png_and_svg(self):
+    def test_render_all_nine_products_as_actual_png_and_svg(self):
         lat = np.linspace(0, 65, 28); lon = np.linspace(70, 180, 44)
         xx, yy = np.meshgrid(lon, lat)
         fields = {key: (lat, lon, values) for key, values in {
             'pressure_msl': 1005+20*np.exp(-((xx-110)**2+(yy-40)**2)/36)-30*np.exp(-((xx-140)**2+(yy-20)**2)/45), 'z500': 570-yy*.4, 'z1000': np.zeros_like(xx),
             't500': -10-yy*.4, 'temperature_2m': 30-yy*.6,
             'wind_speed_10m': xx/4, 'precip': xx/20, 'previous_precip': yy/10,
+            'dewpoint': 25-yy*.6, 'cape': xx*10, 'tcwv': 70-yy*.5,
+            't850': 20-yy*.6, 'wind250': xx,
         }.items()}
         from PIL import Image
         with tempfile.TemporaryDirectory() as temp:
