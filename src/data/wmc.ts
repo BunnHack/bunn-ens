@@ -2,9 +2,9 @@ import { cachedJson } from './request-cache'
 import type { PotentialResult } from './potential'
 export const aiModels = [
   { id: 'FUXI', label: '伏羲 FUXI', color: '#d34d35' },
-  { id: 'FENGQING', label: '風清 FengQing', color: '#d68b00' },
-  { id: 'FENGWU', label: '風烏 FengWu', color: '#ca48ae' },
-  { id: 'PANGU', label: '盤古 Pangu', color: '#258245' },
+  { id: 'FENGQING', label: '风清 FengQing', color: '#d68b00' },
+  { id: 'FENGWU', label: '风乌 FengWu', color: '#ca48ae' },
+  { id: 'PANGU', label: '盘古 Pangu', color: '#258245' },
   { id: 'AIFS', label: 'AIFS', color: '#1d50d2' },
   { id: 'GRAPHCAST', label: 'GraphCast', color: '#9c672b' },
   { id: 'FOURCASTNET', label: 'FourCastNet', color: '#008c9c' },
