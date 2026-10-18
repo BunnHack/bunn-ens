@@ -2,6 +2,7 @@
 import copy
 import csv
 import io
+import gzip
 import json
 from pathlib import Path
 import tempfile
@@ -88,7 +89,8 @@ class StaticChartTests(unittest.TestCase):
             for name,size in [('track',(2000,1300)),('wind',(2000,1200)),('pressure',(2000,1200))]:
                 data=(folder/(name+'.png')).read_bytes();self.assertEqual(data[:8],b'\x89PNG\r\n\x1a\n')
                 image=Image.open(io.BytesIO(data));image.load();self.assertEqual(image.size,size)
-                root=ET.parse(folder/(name+'.svg')).getroot();self.assertTrue(root.tag.endswith('svg'))
+                root=ET.fromstring(gzip.decompress((folder/(name+'.svgz')).read_bytes()));self.assertTrue(root.tag.endswith('svg'))
+                self.assertFalse((folder/(name+'.svg')).exists())
                 self.assertGreater(len(root.findall('.//{http://www.w3.org/2000/svg}path')),10)
             self.assertEqual(stats['counts'],[[0,31],[6,31],[12,31]])
 
@@ -107,7 +109,7 @@ class StaticChartTests(unittest.TestCase):
     def test_manifest_assets_backward_retention_and_exact_source_skip(self):
         def render(payload,region,destination,storm=None):
             destination.parent.mkdir(parents=True,exist_ok=True)
-            for ext in ('.png','.svg'):destination.with_suffix(ext).write_text('SYNTHETIC ASSET FOR CACHE TEST ONLY')
+            for ext in ('.png','.svgz'):destination.with_suffix(ext).write_text('SYNTHETIC ASSET FOR CACHE TEST ONLY')
             return {'trajectoryCount':31,'separateStormMeans':1}
         def intensity(payload,storm,field,destination):return render(payload,None,destination)
         with tempfile.TemporaryDirectory() as folder:

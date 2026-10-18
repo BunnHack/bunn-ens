@@ -113,6 +113,7 @@ jobs:
           from pathlib import Path
           import json
           import xml.etree.ElementTree as ET
+          import gzip
           from PIL import Image
           root=Path('.generated-site/ncep-ensembles')
           manifest=json.loads((root/'index.json').read_text())
@@ -126,7 +127,9 @@ jobs:
                   assert path.is_file() and path.resolve().is_relative_to(root.resolve())
                   if path.suffix=='.png':
                       image=Image.open(path);image.load();assert image.width==2000 and image.height in (1200,1300);count+=1
-                  if path.suffix=='.svg':assert ET.parse(path).getroot().tag.endswith('svg')
+                  if path.suffix in ('.svg','.svgz'):
+                      xml=gzip.decompress(path.read_bytes()) if path.suffix=='.svgz' else path.read_bytes()
+                      assert ET.fromstring(xml).tag.endswith('svg')
           assert count==sum(len(r['regions'])+3*len(r['storms']) for r in manifest['records']) and count>=14
           assert not any(p.suffix in ('.grib2','.grb','.nc','.zarr','.zip') for p in root.rglob('*'))
           print(f'{count} genuine 2000px PNGs independently decoded; all standalone SVGs and native CSV/JSON verified')

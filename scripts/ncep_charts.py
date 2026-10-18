@@ -9,6 +9,7 @@ import argparse
 import csv
 import datetime as dt
 import hashlib
+import gzip
 import io
 import json
 import math
@@ -32,7 +33,7 @@ except ImportError: # Importable by unittest from the repository root.
     from scripts.wm6_forecast import add_geography
 
 PUBLIC='https://raw.githubusercontent.com/BunnHack/bunn-ens/ensemble-track-data/'
-VERSION='ncep-charts-v1'
+VERSION='ncep-charts-v2-svgz'
 REGIONS=[
     {'id':'world','label':'Global','bounds':[-180,180,-55,60]},
     {'id':'wp','label':'Western Pacific','bounds':[100,210,0,55]},
@@ -150,9 +151,12 @@ def save(fig,destination):
     destination.parent.mkdir(parents=True,exist_ok=True)
     fig.savefig(destination.with_suffix('.png'),dpi=160,facecolor=fig.get_facecolor())
     # Matplotlib embeds glyph paths; this is a standalone real SVG, not a screenshot URI.
-    fig.savefig(destination.with_suffix('.svg'),format='svg',facecolor=fig.get_facecolor(),metadata={'Creator':'Bunn ENS '+VERSION})
+    svg=io.StringIO()
+    fig.savefig(svg,format='svg',facecolor=fig.get_facecolor(),metadata={'Creator':'Bunn ENS '+VERSION})
+    destination.with_suffix('.svgz').write_bytes(gzip.compress(svg.getvalue().encode(),compresslevel=9,mtime=0))
+    destination.with_suffix('.svg').unlink(missing_ok=True)
     plt.close(fig)
-    return {'png':str(destination.with_suffix('.png')),'svg':str(destination.with_suffix('.svg'))}
+    return {'png':str(destination.with_suffix('.png')),'svg':str(destination.with_suffix('.svgz'))}
 
 
 def chart_footer(fig,payload,extra):
@@ -285,7 +289,7 @@ def generate(out,sources=None,regions=None,data_ref='ensemble-track-data'):
                 'derived':payload['derived'],'regions':[],'storms':[],'assets':[], 'data':key+'/source.json','csv':key+'/native.csv'}
         (folder/'source.json').write_text(json.dumps(payload,ensure_ascii=False,separators=(',',':'),allow_nan=False)+'\n')
         export_native(payload,folder/'native.csv')
-        def asset(base):return {'png':key+'/'+base+'.png','svg':key+'/'+base+'.svg'}
+        def asset(base):return {'png':key+'/'+base+'.png','svg':key+'/'+base+'.svgz'}
         for region in regions:
             base='regions/'+region['id'];stats=map_chart(payload,region,folder/base)
             record['regions'].append({'id':region['id'],'label':region['label'],'bounds':region['bounds'],**asset(base),**stats})
