@@ -8,6 +8,11 @@ on:
         description: 'latest, or exact 00/06/12/18 UTC ISO initialization; models remain separate'
         default: latest
         type: string
+      models:
+        description: 'Generate both ensembles, or repair just one model without substituting the other'
+        type: choice
+        options: [both, GEFS, AIGEFS]
+        default: both
 permissions:
   contents: read
 concurrency:
@@ -21,6 +26,7 @@ jobs:
       contents: write
     env:
       REQUESTED_RUN: ${{ inputs.initialization_time || 'latest' }}
+      REQUESTED_MODELS: ${{ inputs.models || 'both' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,13 +38,21 @@ jobs:
       - name: Test native ATCF, full denominator, no gap splicing and conservative field lows
         run: python -m unittest discover -s tests -p 'test_ncep_ensembles.py' -v
       - name: Fetch actual 31-member trackers and GEFS native genesis, never provider means
-        run: python scripts/ncep_ensembles.py --run "$REQUESTED_RUN" --tracker-only
+        run: |
+          case "$REQUESTED_MODELS" in
+            both) models=(GEFS AIGEFS);;
+            GEFS) models=(GEFS);;
+            AIGEFS) models=(AIGEFS);;
+            *) exit 1;;
+          esac
+          python scripts/ncep_ensembles.py --models "${models[@]}" --run "$REQUESTED_RUN" --tracker-only
       - name: Publish native tracker phase without claiming AIGEFS field-low availability
         uses: actions/github-script@v7
         with:
           script: |
             await require('./scripts/publish_ncep.cjs')({github,context});
       - name: Verify independently served native GRIB headers, member, physical units and UTC
+        if: inputs.models != 'GEFS'
         run: |
           python - <<'PY'
           import json
@@ -61,8 +75,10 @@ jobs:
           print(json.dumps(evidence))
           PY
       - name: Add actual future-born AIGEFS closed field lows, all 31 members through 240h
+        if: inputs.models != 'GEFS'
         run: python scripts/ncep_ensembles.py --models AIGEFS --hybrid-existing
       - name: Publish completed or explicitly partial hybrid coverage without replacing native tracker winds
+        if: inputs.models != 'GEFS'
         uses: actions/github-script@v7
         with:
           script: |

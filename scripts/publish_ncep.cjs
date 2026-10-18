@@ -27,7 +27,7 @@ module.exports = async function publish({github, context, directory = '.generate
         previous = JSON.parse(Buffer.from(remote.content,'base64').toString('utf8'));
       }
     } catch (error) { if(error.status!==404) throw error; }
-    if(previous && (previous.run>value.run || previous.run===value.run && (previous.derived.fields>value.derived.fields || previous.members.filter(m=>m.tracker==='available').length>value.members.filter(m=>m.tracker==='available').length))) {
+    if(previous && (previous.run>value.run || previous.run===value.run && (previous.derived.fields>value.derived.fields || ['tracker','genesis'].some(kind=>previous.members.filter(m=>m[kind]==='available').length>value.members.filter(m=>m[kind]==='available').length)))) {
       console.log(model+': preserve newer/more complete same-cycle publication; no regression');
       continue;
     }

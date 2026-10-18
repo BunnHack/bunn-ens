@@ -150,7 +150,7 @@ def parse_atcf(text, model, run, sample, genesis=False):
             raise ValueError('Unexpected tracker cadence')
         if genesis:
             identity = a[2]
-            if a[0] not in ('TG','HC') or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identity):
+            if a[0] not in ('TG','HC','AL','EP','CP','WP','IO','SH','SP','SI') or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identity):
                 raise ValueError('Invalid native genesis identity')
         else:
             if a[0] not in ('AL','EP','CP','WP','IO','SH','SP','SI') or not re.fullmatch(r'\d{1,2}',a[1]) or not 1 <= int(a[1]) <= 99:
@@ -174,7 +174,7 @@ def parse_atcf(text, model, run, sample, genesis=False):
              'nativeBasin':native_keys[identity][0],'nativeStormNumber':native_keys[identity][1],
              'kind':'genesis' if genesis else 'matched',
              'sourceFile':genesis_path(run,sample) if genesis else tracker_path(model,run,sample),
-             'method':'NCEP原生genesis候选tracker，保留TG/HC类别，未判定为热带系统，非本站格点追踪' if genesis else 'NCEP原生已编号系统tracker；34kt半径行去重，VMAX原值kt',
+             'method':'NCEP原生genesis候选tracker，保留原始类别与编号，不自动判为热带系统，非本站格点追踪' if genesis else 'NCEP原生已编号系统tracker；34kt半径行去重，VMAX原值kt',
              'points':sorted(points,key=lambda p:p['hour'])} for identity,points in sorted(tracks.items())]
 
 
@@ -226,7 +226,7 @@ def native_dataset(model,run):
             try:
                 gen=parse_atcf(get(genesis_path(run,sample),4_000_000).decode(),model,run,sample,True)
             except Exception as error:
-                warning=f'genesis unavailable ({type(error).__name__}); no derived substitute'
+                warning=f'genesis unavailable ({type(error).__name__}: {str(error)[:100]}); no derived substitute'
         retained=[]
         duplicates=0
         for t in gen:

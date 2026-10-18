@@ -111,7 +111,11 @@ class NativeTrackerTests(unittest.TestCase):
     def test_real_gefs_genesis_contains_both_tg_and_hc_without_inventing_tc_identity(self):
         run=ncep.parse_run('2026-10-18T06:00:00Z')
         tracks=ncep.parse_atcf((FIX/'genesis-mixed-ac00-2026101806.atcf').read_text(),'GEFS',run,0,True)
-        self.assertEqual({t['nativeBasin'] for t in tracks},{'TG','HC'})
+        self.assertEqual({t['nativeBasin'] for t in tracks},{'TG','HC','EP'})
+        ep=next(t for t in tracks if t['nativeBasin']=='EP')
+        self.assertEqual(ep['nativeStormNumber'],'21E')
+        self.assertEqual(ep['sourceId'],'2026101806_F000_184N_1061W_21E')
+        self.assertEqual(ep['kind'],'genesis')
         hc=next(t for t in tracks if t['nativeBasin']=='HC')
         self.assertEqual(hc['nativeStormNumber'],'01G')
         self.assertEqual(hc['sourceId'],'2026101806_F000_104N_0713W_01G')
