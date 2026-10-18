@@ -15,3 +15,4 @@ dist/
 .generated-site/
 __pycache__/
 *.pyc
+.generated-tracks/

@@ -58,6 +58,7 @@ class LowTests(unittest.TestCase):
         seed=m.seeds_at(payload,BASE)[0]
         self.assertEqual(seed['leadHours'],6);self.assertEqual(seed['validTime'],m.iso(BASE));self.assertNotIn('atcfId',seed)
         p['fcsthour']=0;self.assertEqual(m.seeds_at(payload,BASE),[])
+        p['fcsthour']=6;p['validtime']='2026-10-17 18:00:00+08:00';self.assertEqual(m.seeds_at(payload,BASE),[])
 
     def test_track_stops_on_field_failure_never_restarts_or_fills(self):
         seed=dict(code='20260131',name='CHAMPI',basin='W',lat=13,lon=145)

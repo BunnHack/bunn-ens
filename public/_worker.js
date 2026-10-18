@@ -261,9 +261,45 @@ export async function handleWmc(request, env, ctx, url, digest = bytes => crypto
   }
 }
 
+export async function handleModelTracks(request, ctx, url) {
+  if (request.method !== 'GET') return jsonError('GET required', 405);
+  if (url.search) return jsonError('Model tracks do not accept query parameters', 400);
+  const cache = typeof caches === 'undefined' ? null : caches.default;
+  const key = new Request(new URL('/_internal/model-tracks-v1', request.url));
+  const hit = cache ? await cache.match(key) : null;
+  if (hit) return new Response(hit.body, { headers: responseHeaders() });
+  try {
+    const upstream = await fetch('https://raw.githubusercontent.com/BunnHack/bunn-ens/model-track-data/index.json', { credentials: 'omit', redirect: 'manual', signal: AbortSignal.timeout(25000) });
+    if (!upstream.ok) throw Error('Public data publication unavailable');
+    const source = await boundedText(upstream);
+    if (source.length > 2000000) throw Error('Track publication too large');
+    const root = JSON.parse(source);
+    if (root.schema !== 1 || root.generator !== 'low-centres-v1' || !Number.isFinite(Date.parse(root.checkedAt)) || !Array.isArray(root.tracks) || root.tracks.length > 60 || !Array.isArray(root.models) || root.models.length !== 2) throw Error('Invalid track publication');
+    const pick = (obj, fields) => Object.fromEntries(fields.filter(k => obj?.[k] !== undefined).map(k => [k, obj[k]]));
+    const tracks = root.tracks.map(t => {
+      if (!['AIGFS','SD3'].includes(t.model) || !Array.isArray(t.points) || t.points.length > 100 || !Array.isArray(t.fields) || t.fields.length > 100) throw Error('Invalid model or point bounds');
+      const row = pick(t, ['model','systemId','name','basin','kind','source','directoryRun','timeOrigin','sourceTimeUnits','method','notes','attribution','license','endReason','retained']);
+      row.points = t.points.map(p => pick(p, ['lat','lon','leadHours','validTime','pressureHpa','windMs']));
+      row.fields = t.fields.map(f => pick(f, ['url','sha256','bytes','range']));
+      if (t.seed) row.seed = pick(t.seed, ['code','name','basin','model','forecastZero','leadHours','validTime','lat','lon']);
+      return row;
+    });
+    const models = root.models.map(m => {
+      if (!['AIGFS','SD3'].includes(m.model) || !['available','partial','retained','unavailable'].includes(m.status)) throw Error('Invalid model status');
+      return pick(m, ['model','status','run','checkedAt','message']);
+    });
+    const payload = JSON.stringify({ schema: 1, generator: root.generator, checkedAt: root.checkedAt, models, tracks });
+    if (cache) ctx.waitUntil(cache.put(key, new Response(payload, { headers: { ...responseHeaders(), 'cache-control': 'public, max-age=300' } })));
+    return new Response(payload, { headers: responseHeaders() });
+  } catch {
+    return jsonError('AIGFS/SD3 publication unavailable; no substitute tracks supplied', 502);
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/model-tracks') return handleModelTracks(request, ctx, url);
     if (url.pathname === '/api/wmc') return handleWmc(request, env, ctx, url);
     if (url.pathname === '/api/wnc2') return handleWeatherNext(request, ctx, url);
     if (url.pathname === '/api/wm6') return handleWm6(request, env, ctx, url);

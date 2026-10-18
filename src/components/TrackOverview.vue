@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import ChartFrame from './ChartFrame.vue'
 import TrackOverviewPlot from './TrackOverviewPlot.vue'
+import ExtraTrackGuidance from './ExtraTrackGuidance.vue'
+import { addExtraTracks, type ExtraTrack } from '../data/model-tracks'
 import { loadPotential, type PotentialModel, type PotentialResult } from '../data/potential'
 import { basinRegions } from '../data/basin'
 import { addAiTracks, focusTrackRegion, overviewModels } from '../data/overview'
@@ -13,6 +15,7 @@ const results=shallowRef<Partial<Record<PotentialModel,PotentialResult>>>({}),er
 const loading=ref(false),storm=ref('WP292026'),regionId=ref('wp'),focus=ref(true),dataRevision=ref(0)
 const aiCatalog=shallowRef<AiResult>(),aiResults=shallowRef<Record<string,AiResult>>({}),aiError=ref(''),catalogError=ref(''),aiLoading=ref(false)
 const enabledAi=ref<AiModel[]>(aiModels.map(m=>m.id))
+const extraRefresh=ref(0),extraSelection=shallowRef({tracks:[] as ExtraTrack[],independent:false,title:'',association:'',exportKey:'extra-initial'})
 let controller:AbortController|undefined,aiController:AbortController|undefined,revision=0,aiRevision=0,lastLoaded=0
 const aiLoaded:Record<string,number>={}
 const choices=computed(()=>[...new Set(Object.values(results.value).flatMap(r=>r.catalog.points.map(p=>p.trackId)).filter(id=>/^[A-Z]{2}\d{6}$/.test(id)))].sort())
@@ -21,10 +24,13 @@ const independent=computed(()=>storm.value.startsWith('wmc:'))
 const association=computed(()=>independent.value?null:associateAi(aiCatalog.value,results.value.wm6,storm.value))
 const aiCode=computed(()=>independent.value?storm.value.slice(4):association.value?.code??'')
 const aiResult=computed(()=>aiResults.value[aiCode.value])
-const title=computed(()=>independent.value?aiChoices.value.find(c=>c.code===aiCode.value)?.label??`WMC ${aiCode.value}`:association.value?`${storm.value} · WMC ${association.value.code} ${association.value.name}（本站對照）`:storm.value)
-const data=computed(()=>addAiTracks(independent.value?{base:'',tracks:[]}:overviewTracks(results.value,storm.value),(aiResult.value?.tracks??[]).filter(t=>t.code===aiCode.value&&enabledAi.value.includes(t.model)),association.value?.rule??'獨立 WMC 來源系統；未與其他編號合併'))
+const title=computed(()=>extraSelection.value.independent?extraSelection.value.title:independent.value?aiChoices.value.find(c=>c.code===aiCode.value)?.label??`WMC ${aiCode.value}`:association.value?`${storm.value} · WMC ${association.value.code} ${association.value.name}（本站對照）`:storm.value)
+const data=computed(()=>{
+  const main=addAiTracks(independent.value?{base:'',tracks:[]}:overviewTracks(results.value,storm.value),(aiResult.value?.tracks??[]).filter(t=>t.code===aiCode.value&&enabledAi.value.includes(t.model)),association.value?.rule??'獨立 WMC 來源系統；未與其他編號合併')
+  return addExtraTracks(extraSelection.value.independent?{base:'',tracks:[]}:main,extraSelection.value.tracks,extraSelection.value.association)
+})
 const region=computed(()=>{const base=basinRegions.find(r=>r.id===regionId.value)??basinRegions[1]!;return focus.value?focusTrackRegion(data.value.tracks.flatMap(t=>t.points),base):base})
-const filename=computed(()=>`track-overview-${storm.value.replace(':','-')}-${regionId.value}-${focus.value?'focus':'full'}-${region.value.west}_${region.value.east}_${region.value.south}_${region.value.north}-${data.value.base.replace(/[^0-9]/g,'')}-ai${aiCode.value}-${enabledAi.value.join('_')}-data${dataRevision.value}`)
+const filename=computed(()=>`track-overview-${storm.value.replace(':','-')}-${regionId.value}-${focus.value?'focus':'full'}-${region.value.west}_${region.value.east}_${region.value.south}_${region.value.north}-${data.value.base.replace(/[^0-9]/g,'')}-ai${aiCode.value}-${enabledAi.value.join('_')}-${extraSelection.value.exportKey.replace(/[^A-Za-z0-9_-]/g,'-')}-data${dataRevision.value}`)
 function stopAi(){++aiRevision;aiController?.abort();aiLoading.value=false}
 async function loadAiTracks(force=false){
   const code=aiCode.value
@@ -37,7 +43,7 @@ async function loadAiTracks(force=false){
 }
 async function load(force=false){
   if(loading.value||!props.active)return
-  if(force)clearRequestCache(fetch,'/api/wmc')
+  if(force){clearRequestCache(fetch,'/api/wmc');extraRefresh.value++}
   const token=++revision;controller?.abort();controller=new AbortController();const signal=controller.signal;loading.value=true;errors.value={};aiError.value='';catalogError.value=''
   await Promise.all([...overviewModels.map(async m=>{try{const result=await loadPotential(m.id,'latest',signal,undefined,{includeUnofficial:false});if(token===revision&&!signal.aborted){if(result.source==='snapshot'&&results.value[m.id]?.source==='remote')errors.value[m.id]=result.warning??'僅收到有日期的備份，保留先前成功的遠端資料；未確認最新。';else results.value={...results.value,[m.id]:result}}}catch(e){if(!signal.aborted&&token===revision)errors.value[m.id]=e instanceof Error?e.message:String(e)}}),
     (async()=>{try{const result=await loadAi(undefined,signal);if(token===revision&&!signal.aborted)aiCatalog.value=result}catch(e){if(!signal.aborted&&token===revision)catalogError.value=e instanceof Error?e.message:String(e)}})()])
@@ -50,9 +56,10 @@ onBeforeUnmount(()=>{++revision;controller?.abort();stopAi()})
 <template>
 <section class="track-overview"><header><h1>預報洋區總覽</h1><div><label>氣旋系統 <select v-model="storm" aria-label="Overview cyclone"><optgroup label="ATCF 系統（可核對時疊加AI）"><option v-for="id in choices" :key="id">{{ id }}</option></optgroup><optgroup label="AI 來源獨立系統（WMC 編號）"><option v-for="c in aiChoices" :key="c.code" :value="`wmc:${c.code}`">{{ c.label }}</option></optgroup></select></label><label>地圖區域 <select v-model="regionId" aria-label="Overview region"><option v-for="r in basinRegions" :key="r.id" :value="r.id">{{ r.label }}</option></select></label><label><input v-model="focus" type="checkbox"/>聚焦系統</label><button :disabled="loading" @click="load(true)">重新查詢</button></div></header>
 <fieldset class="overview-ai-controls"><legend>AI 模型（單一路徑，不是系集均線／機率）</legend><label v-for="m in aiModels" :key="m.id" :style="{color:m.color}"><input v-model="enabledAi" type="checkbox" :value="m.id" :aria-label="`Show AI ${m.id}`"/>{{ m.label }}<small v-if="aiResult">{{ aiResult.tracks.some(t=>t.model===m.id)?' · 可用':' · 來源未提供' }}</small></label></fieldset>
+<ExtraTrackGuidance :active="active" :code="aiCode" :primary="storm" :catalog="aiCatalog" :refresh="extraRefresh" @update="extraSelection=$event"/>
 <p v-if="loading||aiLoading" role="status">讀取各模式實際資料；不同版本個別標示，不補造未接入曲線。</p>
-<p v-if="association" class="overview-ai-association">WMC {{ association.code }} {{ association.name }} ↔ {{ association.atcfId }}：{{ association.rule }}（{{ association.fixes }}點，最大{{ association.maxKm.toFixed(0) }}km）。</p>
-<p v-else-if="aiCatalog&&!independent" class="overview-warning">此 ATCF 系統尚無唯一、足量的 AI 來源對照，不自動疊加。可另選「AI來源獨立系統」查看；WMC 編號不能直接當 ATCF 尾號。</p>
+<p v-if="association&&!extraSelection.independent" class="overview-ai-association">WMC {{ association.code }} {{ association.name }} ↔ {{ association.atcfId }}：{{ association.rule }}（{{ association.fixes }}點，最大{{ association.maxKm.toFixed(0) }}km）。</p>
+<p v-else-if="aiCatalog&&!independent&&!extraSelection.independent" class="overview-warning">此 ATCF 系統尚無唯一、足量的 AI 來源對照，不自動疊加。可另選「AI來源獨立系統」查看；WMC 編號不能直接當 ATCF 尾號。</p>
 <p v-if="catalogError" class="overview-warning" role="status">AI目錄：{{ catalogError }}{{ aiCatalog?'；保留先前目錄，非本次確認更新':'' }}</p>
 <p v-if="aiError" class="overview-warning" role="status">AI：{{ aiError }}{{ aiResult?'；保留上次成功資料，非本次確認更新':'' }}</p>
 <template v-for="m in overviewModels" :key="m.id"><p v-if="errors[m.id]||results[m.id]?.source==='snapshot'" class="overview-warning" role="status">{{ m.label }}：{{ errors[m.id]||results[m.id]?.warning||'有日期的備份，未確認最新' }}{{ errors[m.id]&&results[m.id]?'；保留上次成功來源，非本次確認更新':'' }}</p></template>

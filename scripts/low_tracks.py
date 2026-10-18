@@ -36,6 +36,8 @@ def iso(value):
 
 
 def utc(value):
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}Z?', value):
+        raise ValueError('WMC reference must use its documented UTC point format')
     return dt.datetime.fromisoformat(value.replace('Z', '+00:00')).replace(tzinfo=UTC)
 
 
@@ -85,6 +87,8 @@ def seeds_at(payload, base):
             try:
                 zero, valid = utc(p['datetime']), utc(p['validtime'])
                 lead = p['fcsthour']
+                if type(lead) not in (int, float) or not math.isfinite(lead) or not 0 <= lead <= 312 or int(lead) != lead:
+                    continue
                 if valid != base or valid != zero + dt.timedelta(hours=lead) or str(p['xuhao']) != code or p['fcsttype'] != model:
                     continue
                 lat, lon = float(p['lat']), float(p['lon'])
@@ -293,7 +297,7 @@ def parse_sd3(data, key):
         if len(points)<2:
             raise ValueError('Insufficient SD3 native fixes')
         basin={'WNP':'W','ENP':'E','NA':'L','NAT':'L','NIO':'B','SIO':'S','SP':'P'}.get(match[3],match[3])
-        return dict(model='SD3',systemId='SD3:'+match[3]+':'+match[4],name=match[4],basin=basin,kind='native',source=SD3+key,directoryRun=iso(directory),timeOrigin=iso(origin),sourceTimeUnits=timevar.units,method='天机源文件原生路径，不做低压重追踪；时间按NetCDF time units/calendar换算UTC，目录版本标签不冒充起报。',notes=['未获文件内独立起报定义；目录时次与首个有效时间分别保留。'],attribution=str(getattr(f,'institution','TianJi Weather Science and Technology Company')),license=str(getattr(f,'license','unknown')),points=points,fields=[dict(url=SD3+key,sha256=hashlib.sha256(data).hexdigest(),bytes=len(data))],endReason='')
+        return dict(model='SD3',systemId='SD3:'+match[3]+':'+match[4],name=match[4],basin=basin,kind='native',source=SD3+key,directoryRun=iso(directory),timeOrigin=iso(origin),sourceTimeUnits=timevar.units,method='天机源文件原生路径，不做低压重追踪；时间按NetCDF time units/calendar换算UTC，目录版本标签不冒充起报。',notes=['未获文件内独立起报定义；目录时次与首个有效时间分别保留。', 'NetCDF title: '+str(getattr(f,'title','未提供'))[:100]+'; source: '+str(getattr(f,'source','未提供'))[:300]],attribution=str(getattr(f,'institution','TianJi Weather Science and Technology Company')),license=str(getattr(f,'license','unknown')),points=points,fields=[dict(url=SD3+key,sha256=hashlib.sha256(data).hexdigest(),bytes=len(data))],endReason='')
 
 
 def generate_sd3(now):

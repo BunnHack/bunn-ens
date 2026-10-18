@@ -9,7 +9,7 @@ export const overviewModels = [
   { id: 'genc', label: 'GENC(M)', color: '#168bef' },
 ] as const
 export type OverviewPoint = { lat: number; lon: number; leadHours: number; count?: number; windMs?: number | null; pressureHpa?: number | null; validTime?: string }
-export type OverviewTrack = { model: PotentialModel | AiModel; label: string; color: string; initialization: string; forecastZero: string; source: 'remote' | 'snapshot'; points: OverviewPoint[]; kind?: 'ensemble' | 'single'; identity?: string }
+export type OverviewTrack = { model: PotentialModel | AiModel | import('./model-tracks').ExtraModel; label: string; color: string; initialization: string; forecastZero: string; source: 'remote' | 'snapshot'; points: OverviewPoint[]; kind?: 'ensemble' | 'single' | 'derived'; identity?: string; initializationLabel?: string; baseLabel?: string; provenance?: string }
 export function focusTrackRegion(points: ReadonlyArray<Pick<TrackPoint, 'lon' | 'lat'>>, fallback: BasinRegion): BasinRegion {
   if (!points.length) return fallback
   const reference=points[0]!.lon, lons=points.map(p=>reference+((p.lon-reference+540)%360+360)%360-180), lats=points.map(p=>p.lat)
