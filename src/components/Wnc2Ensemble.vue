@@ -4,7 +4,8 @@ import Wnc2Plot from './Wnc2Plot.vue'
 import ChartFrame from './ChartFrame.vue'
 import { analyze96W, ensembleFromPoints, loadEnsemble, sourceUrl, trackOptions, REFRESH_MS, SNAPSHOT_RUN, type Cycle, type DataResult, type Model } from '../data/wnc2'
 import { clearRequestCache } from '../data/request-cache'
-const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
+import { currentPotentialId, type CurrentSelection } from '../data/current-selection'
+const props = withDefaults(defineProps<{ active?: boolean;selection?:CurrentSelection }>(), { active: true })
 
 const result = ref<DataResult | null>(null)
 const loading = ref(false)
@@ -14,7 +15,8 @@ const autoLatest = ref(true)
 const model = ref<Model>('FNV3P1')
 const manualDate = ref(SNAPSHOT_RUN.date)
 const manualCycle = ref<Cycle>('00z')
-const selectedTrack = ref('')
+const manualTrack = ref('')
+const selectedTrack = computed({get:()=>props.selection?(result.value?currentPotentialId(props.selection,{catalog:result.value.catalog,details:{},source:result.value.source,checkedAt:result.value.checkedAt}):''):manualTrack.value,set:(value:string)=>{if(!props.selection)manualTrack.value=value}})
 const maxLead = ref(312)
 let controller: AbortController | undefined
 let timer: ReturnType<typeof setInterval> | undefined, lastCheck = 0
@@ -79,7 +81,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
     <p v-if="loading" class="loading-note" role="status">{{ result ? 'Checking for a newer published run…' : 'Discovering published WeatherNext CSV…' }}</p>
     <div v-if="error" class="wnc2-state error" role="alert"><p>{{ error }}{{ result ? ' Retaining the previous successful run; it is not a fresh update.' : '' }}</p><button @click="reload()">Retry</button></div>
     <template v-if="result">
-      <p class="system-disclaimer">{{ selectedTrack }} · <a href="#weather-tools/overview">多模型与系统选择 ↗</a></p>
+      <p class="system-disclaimer">{{ selection?.storm?.name??'' }} · {{ selectedTrack||(selection?'尚无唯一来源对照，不显示其他系统代替':'等待来源') }}</p>
       <label class="lead-field">Forecast window: 0–{{ maxLead }}h <input v-model.number="maxLead" type="range" min="0" max="312" step="6" aria-label="Maximum forecast lead hours" /></label>
       <p class="lead-caption">Selected track available through +{{ availableMax }}h. No positions are invented beyond its lifetime.</p>
       <ChartFrame v-if="data && active" :filename="`WNC2-${selectedTrack.replace(/[^A-Za-z0-9_-]/g, '-')}-${result.run.date}-${result.run.cycle}-0-${maxLead}h`" :title="`WNC2 ${selectedTrack}`"><Wnc2Plot :key="`${initialized}-${selectedTrack}`" :data="data" :max-lead="maxLead" /></ChartFrame>

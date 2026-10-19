@@ -150,11 +150,11 @@ def parse_atcf(text, model, run, sample, genesis=False):
             raise ValueError('Unexpected tracker cadence')
         if genesis:
             identity = a[2]
-            if a[0] not in ('TG','HC','AL','EP','CP','WP','IO','SH','SP','SI') or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identity):
+            if a[0] not in ('TG','HC','AL','EP','CP','WP','IO','AA','BB','SH','SP','SI') or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',identity):
                 raise ValueError('Invalid native genesis identity')
         else:
-            if a[0] not in ('AL','EP','CP','WP','IO','SH','SP','SI') or not re.fullmatch(r'\d{1,2}',a[1]) or not 1 <= int(a[1]) <= 99:
-                raise ValueError('Invalid native cyclone identity')
+            if a[0] not in ('AL','EP','CP','WP','IO','AA','BB','SH','SP','SI') or not re.fullmatch(r'\d{1,2}',a[1]) or not 1 <= int(a[1]) <= 99:
+                raise ValueError(f'Invalid native cyclone identity: {a[0]} {a[1]}')
             identity = f'{a[0]}{int(a[1]):02d}{run:%Y}'
         p = {'hour':lead,'lat':coordinate(a[6+shift],True),'lon':coordinate(a[7+shift],False),
              'windKt':scalar(a[8+shift],1,250),'pressureHpa':scalar(a[9+shift],800,1100),'windMs':None}

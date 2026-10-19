@@ -15,19 +15,19 @@ export async function loadNcep(model:NcepModel,run='latest',signal?:AbortSignal,
  return {catalog:ncepCatalog(data),ncep:data,source:'remote',checkedAt:data.checkedAt,details:{},url,warning:`NOAA/NCEP · 完整分母31；tracker ${data.members.filter(m=>m.tracker==='available').length}/31。${model==='GEFS'?`原生genesis ${data.members.filter(m=>m.genesis==='available').length}/31；保留原始类别，不自动判为热带系统。`:`场L ${data.derived.status} · ${data.derived.fields}/1271 成员时次；场10m风保留m/s，不作业务VMAX。`} 缺成员不代表无风险。`}
  }catch(error){forgetRequest(url,fetcher);throw error}
 }
-export type NcepChartPair={png:string;svg:string}
-export type NcepChartRecord={model:NcepModel;run:string;ensembleSize:31;horizonHours:number;generatedAt:string;trackerMembers:number;genesisMembers:number;derived:NcepDataset['derived'];assets:string[];regions:({id:string;label:string}&NcepChartPair)[];storms:({id:string;members:number;track:NcepChartPair;wind:NcepChartPair;pressure:NcepChartPair})[];data:string;csv:string}
+export type NcepChartPair={png:string;svg?:string}
+export type NcepChartRecord={model:NcepModel;run:string;sourceSha256:string;ensembleSize:31;horizonHours:number;generatedAt:string;trackerMembers:number;genesisMembers:number;derived:NcepDataset['derived'];assets:string[];regions:({id:string;label:string}&NcepChartPair)[];storms:({id:string;members:number;track:NcepChartPair;wind:NcepChartPair;pressure:NcepChartPair})[];data:string;csv:string}
 export type NcepManifest={schema:1;generator:string;records:NcepChartRecord[]}
 export function ncepAsset(path:string,record:NcepChartRecord){
  const prefix=`runs/${record.model}/${record.run.replace(/[-:]/g,'')}/`
- if(!record.assets.includes(path)||!path.startsWith(prefix)||!/^runs\/(GEFS|AIGEFS)\/20\d{6}T(00|06|12|18)0000Z\/(regions\/(world|wp|ep|al|ni|si|sp)\.(png|svgz?)|storms\/(AL|EP|CP|WP|IO|SH|SP|SI)\d{2}20\d{2}-(track|wind|pressure)\.(png|svgz?)|source\.json|native\.csv)$/.test(path))throw Error('预制图路径无效；不以其他模型或时次替代')
+ if(!record.assets.includes(path)||!path.startsWith(prefix)||!/^runs\/(GEFS|AIGEFS)\/20\d{6}T(00|06|12|18)0000Z\/(regions\/(world|wp|ep|al|ni|si|sp)\.(png|svgz?)|storms\/(AL|EP|CP|WP|IO|AA|BB|SH|SP|SI)\d{2}20\d{2}-(track|wind|pressure)\.(png|svgz?)|source\.json|native\.csv)$/.test(path))throw Error('预制图路径无效；不以其他模型或时次替代')
  return NCEP_CHARTS+path
 }
 export async function loadNcepManifest(signal?:AbortSignal,fetcher:typeof fetch=fetch):Promise<NcepManifest>{
  const url=NCEP_CHARTS+'index.json'
  try{const v=await cachedJson<any>(url,signal,fetcher)
- if(v.schema!==1||!['ncep-charts-v1','ncep-charts-v2-svgz'].includes(v.generator)||!Array.isArray(v.records)||!v.records.length||v.records.length>4)throw Error('预制图清单无效')
- for(const r of v.records){if(!['GEFS','AIGEFS'].includes(r.model)||!ncepRun(r.run)||r.ensembleSize!==31||r.horizonHours!==(r.model==='GEFS'?120:240)||!Array.isArray(r.assets)||!Array.isArray(r.regions)||!Array.isArray(r.storms))throw Error('预制图模型／起报／分母无效');for(const p of r.assets)ncepAsset(p,r)}
+ if(v.schema!==1||!['ncep-charts-v1','ncep-charts-v2-svgz','ncep-charts-v3-png'].includes(v.generator)||!Array.isArray(v.records)||!v.records.length||v.records.length>4)throw Error('预制图清单无效')
+ for(const r of v.records){if(!['GEFS','AIGEFS'].includes(r.model)||!ncepRun(r.run)||!/^[a-f0-9]{64}$/.test(r.sourceSha256)||r.ensembleSize!==31||r.horizonHours!==(r.model==='GEFS'?120:240)||!Array.isArray(r.assets)||!Array.isArray(r.regions)||!Array.isArray(r.storms))throw Error('预制图模型／起报／分母无效');for(const p of r.assets)ncepAsset(p,r)}
  return v as NcepManifest
  }catch(error){forgetRequest(url,fetcher);throw error}
 }

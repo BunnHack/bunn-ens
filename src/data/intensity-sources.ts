@@ -2,6 +2,12 @@ import type { IntensityMetric, IntensitySeries, IntensityPoint } from './intensi
 import { aiModels, type AiResult } from './wmc'
 import { extraModels, type ExtraTrack } from './model-tracks'
 export type GuidanceSeries = Omit<IntensitySeries,'model'|'definition'|'denominator'> & { model:string;definition:'member_mean'|'provider_mean'|'single'|'low'|'aid';denominator:number|null;unit?:'kt'|'m/s'|'hPa';identity?:string;initializationLabel?:string;baseLabel?:string;note?:string;attribution?:string;license?:string }
+export function windGuidanceInKnots(series:GuidanceSeries):GuidanceSeries{
+ if(series.metric!=='wind'||series.unit!=='m/s')return series
+ if(series.definition!=='single')return {...series,unit:'kt',points:[],note:(series.note??'')+' Field vector wind is not sustained TC VMAX; excluded.'}
+ const factor=3600/1852
+ return {...series,unit:'kt',note:(series.note??'')+' Display conversion only: original m/s ×3600/1852 = kt; no duration/intensity calibration.',points:series.points.map(p=>({...p,value:p.value*factor,min:p.min===null?null:p.min*factor,max:p.max===null?null:p.max*factor}))}
+}
 function point(value:number,validTime:string,leadHours:number):IntensityPoint{return {value,validTime,time:Date.parse(validTime),leadHours,count:null,min:null,max:null}}
 export function aiIntensity(result:AiResult|undefined,code:string,metric:IntensityMetric):GuidanceSeries[]{
   return (result?.tracks??[]).filter(t=>t.code===code).map(t=>{

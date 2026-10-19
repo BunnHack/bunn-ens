@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { chartPng, serializeChart } from '../data/chart-image'
+import { publishedPng } from '../data/published-png'
 import { zhHans } from '../data/zh-hans'
-const props = defineProps<{ filename: string; title?: string }>()
+const props = defineProps<{ filename: string; title?: string; png?: string }>()
+let pngController:AbortController|undefined
 const root = ref<HTMLElement | null>(null)
 const viewport = ref<HTMLElement | null>(null)
 const zoom = ref(1), enlarged = ref(false), exporting = ref(false), preview = ref(''), error = ref('')
@@ -27,11 +29,13 @@ function saveSvg() {
 async function savePng() {
   if (exporting.value) return
   exporting.value = true; error.value = ''
-  const name = props.filename
+  const name = props.filename, original=props.png
+  pngController=new AbortController()
   try {
-    const png = await chartPng(svgText())
-    if (!disposed && name === props.filename) { preview.value = png; download(png, 'png', name) }
-  } catch (cause) { if (!disposed && name === props.filename) error.value = `${cause instanceof Error ? cause.message : 'PNG 匯出失敗'} 可改用下載 SVG。` }
+    const png = original ? URL.createObjectURL(await publishedPng(original,pngController.signal)) : await chartPng(svgText())
+    if (!disposed && name === props.filename && original===props.png) { if(preview.value.startsWith('blob:'))URL.revokeObjectURL(preview.value);preview.value = png; download(png, 'png', name) }
+    else if(original)URL.revokeObjectURL(png)
+  } catch (cause) { if (!disposed && name === props.filename && original===props.png) error.value = `${cause instanceof Error ? cause.message : 'PNG导出失败'}${original?'；不保存其他图代替。':'；可改用下载SVG。'}` }
   finally { if (!disposed) exporting.value = false }
 }
 async function toggleEnlarged() {
@@ -61,13 +65,14 @@ function moveDrag(event: PointerEvent) {
   viewport.value.scrollLeft = drag.left + drag.x - event.clientX; viewport.value.scrollTop = drag.top + drag.y - event.clientY
 }
 function resetZoom() { zoom.value = 1; if (viewport.value) { viewport.value.scrollLeft = 0; viewport.value.scrollTop = 0 } }
-watch(() => props.filename, () => { preview.value = ''; error.value = ''; resetZoom() })
-onBeforeUnmount(() => { disposed = true; if (enlarged.value) document.body.style.overflow = previousOverflow })
+watch(preview,(_,old)=>{if(old.startsWith('blob:'))URL.revokeObjectURL(old)})
+watch([() => props.filename,()=>props.png], () => { pngController?.abort();preview.value = ''; error.value = ''; resetZoom() })
+onBeforeUnmount(() => { disposed = true; pngController?.abort();if(preview.value.startsWith('blob:'))URL.revokeObjectURL(preview.value);if (enlarged.value) document.body.style.overflow = previousOverflow })
 </script>
 
 <template>
   <section ref="root" class="chart-frame" :class="{ 'chart-frame-enlarged': enlarged }" :role="enlarged ? 'dialog' : 'region'" :aria-modal="enlarged ? true : undefined" :aria-label="title || '预报图表'" @keydown="keydown">
-    <div class="chart-actions"><button class="chart-expand" @click="toggleEnlarged">{{ enlarged ? '关闭大图' : '放大地图' }}</button><button aria-label="Zoom out chart" :disabled="zoom <= 1" @click="zoom = Math.max(1, zoom - .25)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button aria-label="Zoom in chart" :disabled="zoom >= 4" @click="zoom = Math.min(4, zoom + .25)">＋</button><button @click="resetZoom">重设</button><button class="chart-save-svg" @click="saveSvg">下载 SVG</button><button class="chart-save-png" :disabled="exporting" @click="savePng">{{ exporting ? '转换中…' : '下载 PNG' }}</button></div>
+    <div class="chart-actions"><button class="chart-expand" @click="toggleEnlarged">{{ enlarged ? '关闭大图' : '放大地图' }}</button><button aria-label="Zoom out chart" :disabled="zoom <= 1" @click="zoom = Math.max(1, zoom - .25)">−</button><span>{{ Math.round(zoom * 100) }}%</span><button aria-label="Zoom in chart" :disabled="zoom >= 4" @click="zoom = Math.min(4, zoom + .25)">＋</button><button @click="resetZoom">重设</button><button v-if="!png" class="chart-save-svg" @click="saveSvg">下载 SVG</button><button class="chart-save-png" :disabled="exporting" @click="savePng">{{ exporting ? '处理中…' : '下载 PNG' }}</button></div>
     <p class="chart-help">可缩放至 400%；放大后可拖曳或触控滚动。下载保留完整图表与原始长宽比例。</p>
     <div ref="viewport" class="chart-viewport" :class="{ 'chart-draggable': zoom > 1 }" @pointerdown="startDrag" @pointermove="moveDrag" @pointerup="drag = null" @pointercancel="drag = null" @lostpointercapture="drag = null"><div class="chart-canvas" :style="{ width: `${zoom * 100}%` }"><slot /></div></div>
     <p v-if="error" class="chart-export-error" role="alert">{{ zhHans(error) }}</p>

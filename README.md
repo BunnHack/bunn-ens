@@ -2,7 +2,16 @@
 
 Vue 3 + TypeScript weather dashboard with source-backed current storms, multi-model track/intensity guidance and native WM-6 forecast charts.
 
-## Current behavior (2026-10-18)
+## Current Storm linkage and PNG publication update
+
+- Current Storm alone drives homepage WNC2, Intensity Guidance and GEFS/AIGEFS charts. Cross-source association needs two same-UTC fixes within the source's first 24h, ≥6h apart, every distance ≤250km and unique correspondence in both full catalogs. This is a local forecast-reference comparison, not an official Zoom/ATCF identity crosswalk; missing or ambiguous correspondence stays empty.
+- Intensity wind display converts individual AI/SD3 m/s with `3600/1852` to kt. Original values, wind definitions and existing Cat thresholds/colours stay unchanged; field-L vector speed is not sustained tracker VMAX. Removed the independent intensity system selector, aid/source/raw-value panels and historical TRUDY charts.
+- Overview fix labels show only native `+Nh`; UTC stays in provenance/tooltips. Current Storm may draw a 24h forecast-to-forecast interval only using a source spline whose endpoints match both fixes; no invented gap connection.
+- GEFS/AIGEFS basin/typhoon/extended-potential pages reuse WNC3's actual `BasinPlot`/controls. Workflow PNGs reuse `ChartFrame` controls, with bounded original-PNG downloads and no SVG alternative. New NCEP publications are `ncep-charts-v3-png`, preserving both chart trees.
+- Accept NOAA's native AA/BB basin identities without renaming them or applying a 34kt filter. `ncep-native.yml` checks latest complete tracker inventories hourly, skips already complete cycles, and publishes compact native data/PNG independently of the longer field-L job. Native-phase publication also requests PNG refresh immediately; incomplete field-L coverage remains disclosed, never spliced from another run.
+- WM-6 chart workflow is manually disabled and its scheduled trigger removed; prior published graphics remain available. This update uses build/publication checks only, with unit execution explicitly skipped for the requested publication.
+
+## Earlier release behavior (2026-10-18; superseded where above differs)
 
 - **Current Storm** now uses `GET /api/current-storms`: fixed Zoom Earth time → six-hour catalog → same-ID details, bounded reads/three concurrent details and five-minute successful caching. Preserve native kt/hPa, source IDs and seasonal years; `max`/`forecast` are indices, not intensity. Only `forecast:false` fixes at/before the provider clock are current analysis. Analysis/forecast are separate, gaps >12h are not joined, source-clock/analysis age and retained same-ID failures are disclosed. Disturbance centroids are not cyclone centres or measured calm winds. Historical imagery is never a live substitute.
 - The obsolete WNC2 initialization/screenshot prose and sample/genesis dropdown, and the requested long WM-6 wind-category paragraph, are removed. Independent native WNC2/WM-6 controls remain in a lazy collapsed panel; model identities are not automatically paired to Zoom IDs.

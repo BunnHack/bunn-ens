@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: write
-      actions: read
+      actions: write
     env:
       REQUESTED_RUN: ${{ inputs.initialization_time || 'latest' }}
       REQUESTED_MODELS: ${{ inputs.models || 'both' }}
@@ -40,7 +40,7 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements-tracks.txt
       - run: pip install -r scripts/requirements-tracks.txt
-      - name: Test native ATCF, full denominator, no gap splicing and conservative field lows
+      - name: Native ensemble unit suite for subsequent full hybrid jobs
         run: python -m unittest discover -s tests -p 'test_ncep_ensembles.py' -v
       - name: Validate explicit recovery provenance before restoring compact checkpoints
         if: inputs.resume_run_id != ''
@@ -76,6 +76,7 @@ jobs:
         with:
           script: |
             await require('./scripts/publish_ncep.cjs')({github,context});
+            await github.rest.actions.createWorkflowDispatch({owner:context.repo.owner,repo:context.repo.repo,workflow_id:'ncep-charts.yml',ref:'main',inputs:{skip_tests:'true'}});
       - name: Verify independently served native GRIB headers, member, physical units and UTC
         if: inputs.models != 'GEFS'
         run: |

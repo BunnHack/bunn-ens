@@ -1,64 +1,14 @@
-<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GEFS / AIGEFS 集合预制图</title><style>
-[hidden]{display:none!important}
-*{box-sizing:border-box}body{margin:0;background:#eef4f8;color:#29475d;font:15px system-ui,sans-serif}main{max-width:1500px;margin:auto;padding:18px}h1{font-size:23px;margin:0 0 15px}.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px;background:white;border-radius:10px}label{display:grid;gap:5px;font-size:12px}select,a{font:inherit}select{max-width:100%;padding:9px;border:1px solid #b9cbd7;border-radius:5px;color:#29475d;background:white}a{color:#087796}nav{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0}.status{line-height:1.5;font-size:12px}figure{margin:12px 0;padding:4px;background:white;border:1px solid #cbdae4;border-radius:8px}img{display:block;width:100%;max-height:78vh;object-fit:contain;height:auto}#error{color:#a02d26}small{font-size:12px}button{padding:8px}body.loading img{opacity:.5}@media(max-width:600px){main{padding:10px}h1{font-size:20px}.controls{gap:8px}label{flex:1 1 42%;min-width:0}select{width:100%}img{max-height:none}nav{gap:12px}}
-</style></head><body><main><h1>GEFS / AIGEFS 集合预制图</h1><div class="controls"><label>模型<select id="model" aria-label="模型"><option>GEFS</option><option>AIGEFS</option></select></label><label>实际起报 UTC<select id="run" aria-label="实际起报 UTC"></select></label><label>图种<select id="product" aria-label="图种"><option value="region">洋区轨迹与候选低压</option><option value="track">单系统成员轨迹</option><option value="wind">单系统风速强度</option><option value="pressure">单系统中心气压</option></select></label><label id="region-label">洋区<select id="region" aria-label="洋区"></select></label><label id="storm-label" hidden>来源系统编号<select id="storm" aria-label="来源系统编号"></select></label></div><p id="status" class="status" role="status">读取已发布清单…</p><nav><a id="png">下载 PNG</a><a id="svg">下载 SVG</a><a id="csv">原始数值 CSV</a><a id="data">来源 JSON</a><a href="https://tropical-tidbits-material.pages.dev/">返回主站</a></nav><p id="error" role="alert"></p><figure><img id="chart" alt="实际发布的NCEP集合图" hidden></figure><small>GitHub Actions 产图；网页不下载 GRIB。31 成员含 0 号控制，均线需 ≥8/31 位成员报告。原生 VMAX 不调整；场 L／genesis 候选不等于已判定热带气旋。</small></main><script type="module">
-const $=id=>document.getElementById(id),model=$('model'),run=$('run'),product=$('product'),region=$('region'),storm=$('storm'),chart=$('chart');let manifest;
-const query=new URLSearchParams(location.search);if(['GEFS','AIGEFS'].includes(query.get('model')))model.value=query.get('model');
-const labels={world:'全球',wp:'西北太平洋',ep:'东北太平洋',al:'大西洋',ni:'北印度洋',si:'南印度洋',sp:'南太平洋'};
-const options=(select,items)=>{const old=select.value;select.replaceChildren(...items.map(([id,label])=>new Option(label,id)));if(items.some(([id])=>id===old))select.value=old};
-function selected(){return manifest.records.find(r=>r.model===model.value&&r.run===run.value)}
-function safe(path,record){if(typeof path!=='string'||!record.assets.includes(path)||!path.startsWith('runs/'+record.model+'/'+record.run.replace(/[-:]/g,'')+'/')||!/^runs\/(?:GEFS|AIGEFS)\/20\d{6}T(?:00|06|12|18)0000Z\/(?:regions\/(?:world|wp|ep|al|ni|si|sp)\.(?:png|svgz?)|storms\/(?:AL|EP|CP|WP|IO|SH|SP|SI)\d{2}20\d{2}-(?:track|wind|pressure)\.(?:png|svgz?)|source\.json|native\.csv)$/.test(path))throw Error('发布路径无效；不改用其他图。');return path}
-let svgRevision=0,svgAbort;
-function render(){try{
- svgRevision++;svgAbort?.abort();
- const r=selected();if(!r)throw Error('此模型／起报尚无已发布图。');
- const isRegion=product.value==='region';$('region-label').hidden=!isRegion;$('storm-label').hidden=isRegion;
- const item=isRegion?r.regions.find(x=>x.id===region.value):r.storms.find(x=>x.id===storm.value)?.[product.value];if(!item)throw Error('此选择未发布，不以其他模型或时次代替。');
- for(const type of ['png','svg']){const link=$(type);link.href=safe(item[type],r);link.download=item[type].split('/').pop().replace(/\.svgz$/,'.svg')}
- for(const type of ['csv','data'])$(type).href=safe(r[type],r);
- const wanted=safe(item.png,r);chart.hidden=true;chart.onload=()=>{if(chart.currentSrc===new URL(wanted,location.href).href&&chart.complete&&chart.naturalWidth>0)chart.hidden=false};chart.src=wanted;
- if(chart.complete&&chart.naturalWidth>0)chart.onload();
- chart.alt=`${r.model} ${r.run} ${isRegion?labels[region.value]??region.value:storm.value} ${product.value}`;
- const d=r.derived,state={pending:'待生成',available:'已出版',partial:'部分出版',unavailable:'未能生成',not_needed:'使用原生来源'}[d.status]??d.status;
- const extra=r.model==='GEFS'?`原生 genesis ${r.genesisMembers}/31`:`场 L ${state} · 已验证 ${d.fields}/1271 成员时次`;
- $('status').textContent=`起报 ${r.run} · +0–${r.horizonHours}h · tracker ${r.trackerMembers}/31 · ${extra} · 产图 ${r.generatedAt}`;$('error').textContent='';
-}catch(e){chart.hidden=true;chart.removeAttribute('src');$('error').textContent=e.message;for(const id of ['png','svg','csv','data'])$(id).removeAttribute('href')}}
-function chooseRun(){const r=selected();if(!r)return render();options(region,r.regions.map(x=>[x.id,labels[x.id]??x.label]));if(!region.value||region.value==='world')region.value=r.regions.some(x=>x.id==='wp')?'wp':region.value;options(storm,r.storms.map(x=>[x.id,`${x.id} · ${x.members}/31 成员`]));render()}
-function chooseModel(){options(run,manifest.records.filter(r=>r.model===model.value).sort((a,b)=>b.run.localeCompare(a.run)).map(r=>[r.run,r.run.replace('T',' ').replace('Z',' UTC')]));chooseRun()}
-for(const select of [product,region,storm])select.addEventListener('change',render);model.addEventListener('change',chooseModel);run.addEventListener('change',chooseRun);chart.addEventListener('error',()=>{$('error').textContent='此图加载失败；不显示其他模型／起报替代。';chart.hidden=true});
-async function graphicBytes(stream,limit,signal){
- const reader=stream.getReader(),chunks=[];let length=0;
- const cancel=()=>{void reader.cancel().catch(()=>{})};signal.addEventListener('abort',cancel,{once:true});
- try{while(true){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>limit){await reader.cancel();throw Error('SVG图文件超过安全大小限制。')}chunks.push(value)}signal.throwIfAborted()}
- finally{signal.removeEventListener('abort',cancel);reader.releaseLock()}
- const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength}return bytes;
-}
-$('svg').addEventListener('click',async event=>{
- event.preventDefault();const link=$('svg'),href=link.getAttribute('href');if(!href)return;
- const revision=svgRevision;svgAbort?.abort();const controller=new AbortController();svgAbort=controller;const timer=setTimeout(()=>controller.abort(),30000);link.setAttribute('aria-busy','true');
- try{
-  const response=await fetch(href,{credentials:'omit',redirect:'error',signal:controller.signal});if(!response.ok||!response.body)throw Error('SVG原图暂不可用；不改用其他图。');
-  let bytes=await graphicBytes(response.body,8*1024*1024,controller.signal);
-  if(bytes[0]===31&&bytes[1]===139){if(typeof DecompressionStream==='undefined')throw Error('此浏览器不支持SVG解包，请下载PNG。');bytes=await graphicBytes(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),64*1024*1024,controller.signal)}
-  const xml=new TextDecoder('utf-8',{fatal:true}).decode(bytes),svg=new DOMParser().parseFromString(xml,'image/svg+xml');
-  if(svg.documentElement.localName!=='svg'||svg.querySelector('parsererror,script,foreignObject')||[...svg.querySelectorAll('*')].some(node=>[...node.attributes].some(a=>a.localName==='href'&&!a.value.startsWith('#'))))throw Error('SVG来源或格式无效；不保存替代文件。');
-  controller.signal.throwIfAborted();if(revision!==svgRevision||link.getAttribute('href')!==href)return;
-  const url=URL.createObjectURL(new Blob([xml],{type:'image/svg+xml;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=link.download;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
- }catch(error){if(error.name!=='AbortError'&&revision===svgRevision)$('error').textContent=error.message}
- finally{clearTimeout(timer);if(svgAbort===controller)link.removeAttribute('aria-busy')}
-});
-try{
- if(query.has('model')&&!['GEFS','AIGEFS'].includes(query.get('model')))throw Error('此模型未在预制图渠道出版，不改用其他模型。');
- const response=await fetch('index.json',{credentials:'omit'});if(!response.ok)throw Error('图清单暂不可用');manifest=await response.json();
- if(manifest.schema!==1||!['ncep-charts-v1','ncep-charts-v2-svgz'].includes(manifest.generator)||!Array.isArray(manifest.records)||manifest.records.length>4||manifest.records.some(r=>!['GEFS','AIGEFS'].includes(r.model)||!/^20\d{2}-\d\d-\d\dT(?:00|06|12|18):00:00Z$/.test(r.run)||r.ensembleSize!==31))throw Error('图清单来源或起报无效');
- chooseModel();
- if(query.has('storm')){
-  const requested=query.get('storm'),r=selected();if(!r.storms.some(s=>s.id===requested))throw Error('所请求来源编号未在此次出版，不改用其他系统。');
-  storm.value=requested;product.value='track';render();
- }
-}catch(e){
- $('error').textContent=e.message;chart.hidden=true;chart.removeAttribute('src');
- for(const id of ['png','svg','csv','data'])$(id).removeAttribute('href');
-}
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GEFS / AIGEFS 集合图</title><style>
+body{margin:0;background:#f4f7fa;color:#42586e;font:14px Arial,sans-serif}main{max-width:1280px;margin:auto;padding:18px}.controls,nav{display:flex;flex-wrap:wrap;gap:12px;align-items:end}label{display:grid;gap:6px;min-width:0}select,a{padding:8px;border:1px solid #d1dce5;border-radius:6px;background:white;color:#327fa4}nav{margin:14px 0}figure{margin:0;overflow:auto;background:white}img{display:block;width:100%;height:auto}#error{color:#b24032}.status,small{line-height:1.8}select{max-width:100%}@media(max-width:600px){label{flex:1 1 42%}main{padding:9px}}
+</style></head><body><main><h1>GEFS / AIGEFS 集合预报</h1><div class="controls"><label>模型<select id="model"><option>GEFS</option><option>AIGEFS</option></select></label><label>实际起报UTC<select id="run"></select></label><label>产品<select id="product"><option value="region">洋区轨迹</option><option value="track">系统成员轨迹</option><option value="wind">风速kt</option><option value="pressure">气压hPa</option></select></label><label id="region-label">洋区<select id="region"></select></label><label id="storm-label">原始系统编号<select id="storm"></select></label></div><p id="status" class="status">读取清单…</p><nav><a id="png">下载PNG</a><a id="csv">原始CSV</a><a id="data">来源JSON</a><a href="https://tropical-tidbits-material.pages.dev/">返回主站</a></nav><p id="error" role="alert"></p><figure><img id="chart" alt="已发布的NCEP集合图" hidden></figure><small>Workflow只产PNG；不下载GRIB。31成员含0号控制。均线至少8/31；genesis及场L不等于已判定热带气旋，场10m风不替代持续风VMAX。</small></main><script type="module">
+const $=id=>document.getElementById(id),query=new URLSearchParams(location.search);let manifest,expected='';
+function safe(path,r){if(typeof path!=='string'||!r.assets.includes(path)||!path.startsWith('runs/'+r.model+'/'+r.run.replace(/[-:]/g,'')+'/')||!/^runs\/(GEFS|AIGEFS)\/20\d{6}T(00|06|12|18)0000Z\/(regions\/(world|wp|ep|al|ni|si|sp)\.png|storms\/(AL|EP|CP|WP|IO|AA|BB|SH|SP|SI)\d{2}20\d{2}-(track|wind|pressure)\.png|native\.csv|source\.json)$/.test(path))throw Error('发布路径无效');return path}
+function options(id,items,value){$(id).replaceChildren(...items.map(([v,l])=>new Option(l,v)));if(value!==undefined)$(id).value=value}
+function hide(){expected='';$('chart').hidden=true;$('chart').removeAttribute('src');for(const id of['png','csv','data'])$(id).removeAttribute('href')}
+function render(){hide();$('error').textContent='';try{const r=manifest.records.find(r=>r.model===$('model').value&&r.run===$('run').value);if(!r)throw Error('所选模型／起报尚未发布，不借其他时次代替');const regional=$('product').value==='region';$('region-label').hidden=!regional;$('storm-label').hidden=regional;const item=regional?r.regions.find(v=>v.id===$('region').value):r.storms.find(v=>v.id===$('storm').value)?.[$('product').value];if(!item)throw Error('所选系统／产品尚未发布');const path=safe(item.png,r);$('png').href=path;$('png').download=path.split('/').pop();$('csv').href=safe(r.csv,r);$('data').href=safe(r.data,r);expected=new URL(path,location.href).href;$('chart').src=path;$('status').textContent=`${r.model} ${r.run} · +0–${r.horizonHours}h · tracker ${r.trackerMembers}/31 · ${r.model==='GEFS'?'genesis '+r.genesisMembers+'/31':'场L '+r.derived.status+' '+r.derived.fields+'/1271'} · 产图 ${r.generatedAt}`}catch(e){$('error').textContent=e.message}}
+function modelChanged(){const records=manifest.records.filter(r=>r.model===$('model').value).sort((a,b)=>b.run.localeCompare(a.run));options('run',records.map(r=>[r.run,r.run]));runChanged()}
+function runChanged(){const r=manifest.records.find(r=>r.model===$('model').value&&r.run===$('run').value);options('region',(r?.regions??[]).map(v=>[v.id,v.label]),'wp');options('storm',(r?.storms??[]).map(v=>[v.id,v.id]),query.get('storm')??'WP292026');render()}
+$('chart').onload=()=>{if($('chart').currentSrc===expected)$('chart').hidden=false};$('chart').onerror=()=>{$('chart').hidden=true;$('error').textContent='此图未能加载，不显示其他图替代'};
+$('model').onchange=modelChanged;$('run').onchange=runChanged;for(const id of['product','region','storm'])$(id).onchange=render;
+try{const r=await fetch('index.json',{credentials:'omit',redirect:'error',cache:'no-cache'});if(!r.ok)throw Error('发布清单暂不可用');manifest=await r.json();if(manifest.schema!==1||!['ncep-charts-v1','ncep-charts-v2-svgz','ncep-charts-v3-png'].includes(manifest.generator)||!Array.isArray(manifest.records))throw Error('清单无效');$('model').value=query.get('model')??'GEFS';modelChanged()}catch(e){hide();$('error').textContent=e.message}
 </script></body></html>

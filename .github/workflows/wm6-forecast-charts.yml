@@ -1,8 +1,6 @@
 name: Generate WM-6 forecast charts
 on:
-  schedule:
-    # Probe availability hourly; generate/publish only a new base or pinned repair.
-    - cron: '25 * * * *'
+  # Paused by user request. GitHub workflow is disabled_manually; no scheduled calls.
   workflow_dispatch:
     inputs:
       initialization:

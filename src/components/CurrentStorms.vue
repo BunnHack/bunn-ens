@@ -4,10 +4,13 @@ import ChartFrame from './ChartFrame.vue'
 import CurrentStormPlot from './CurrentStormPlot.vue'
 import { displayUtc, latestAnalysis, loadCurrentStorms, retainStormEntries, type CurrentStorms } from '../data/current-storms'
 import { clearRequestCache } from '../data/request-cache'
+import type { CurrentSelection } from '../data/current-selection'
 const props=withDefaults(defineProps<{active?:boolean}>(),{active:true})
+const emit=defineEmits<{selection:[value:CurrentSelection]}>()
 const result=shallowRef<CurrentStorms>(),selected=ref(''),loading=ref(false),error=ref(''),historyHours=ref(48),showForecast=ref(true)
 let controller:AbortController|undefined,timer:ReturnType<typeof setInterval>|undefined,revision=0,lastAttempt=0
 const entry=computed(()=>result.value?.entries.find(e=>e.id===selected.value)),storm=computed(()=>entry.value?.data)
+watch([storm,result],()=>emit('selection',{storm:storm.value??null,storms:result.value?.entries.flatMap(e=>e.data&&!e.retained?[e.data]:[])??[],providerTime:result.value?.providerTime??''}),{immediate:true,flush:'sync'})
 const current=computed(()=>storm.value&&result.value?latestAnalysis(storm.value,result.value.providerTime):null)
 const stale=computed(()=>current.value&&result.value&&(Date.parse(result.value.providerTime)-Date.parse(current.value.date)>12*3600000))
 const clockWarning=computed(()=>result.value&&Math.abs(Date.now()-Date.parse(result.value.providerTime))>30*60000)

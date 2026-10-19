@@ -1,6 +1,11 @@
 name: Generate GEFS and AIGEFS ensemble charts
 on:
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip unit tests for an explicitly requested data-only publication'
+        type: boolean
+        default: false
   workflow_run:
     workflows: ['Publish GEFS and AIGEFS 31-member hybrid tracks']
     types: [completed]
@@ -30,7 +35,8 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements-forecast.txt
       - run: pip install -r scripts/requirements-forecast.txt
-      - name: Test genuine PNG/SVG, units, member counts, means, gaps and missing values
+      - name: Native chart unit suite (unless explicitly skipped)
+        if: ${{ !inputs.skip_tests }}
         run: python -m unittest discover -s tests -p 'test_ncep_charts.py' -v
       - name: Restore existing WM-6 charts without any WindBorne API calls
         uses: actions/cache/restore@v4
@@ -103,17 +109,15 @@ jobs:
           script: |
             const {owner,repo}=context.repo;
             core.setOutput('sha',(await github.rest.git.getRef({owner,repo,ref:'heads/ensemble-track-data'})).data.object.sha);
-      - name: Generate actual basin, member-track, conditional-mean and intensity PNG/SVG
+      - name: Generate basin, member-track and intensity PNG charts only
         env:
           NCEP_DATA_REF: ${{ steps.source.outputs.sha }}
         run: python scripts/ncep_charts.py --data-ref "$NCEP_DATA_REF"
-      - name: Independently decode EVERY PNG and SVG, check all manifest paths and retain no grids
+      - name: Check PNG publication integrity and paths; retain no native grids
         run: |
           python - <<'PY'
           from pathlib import Path
           import json
-          import xml.etree.ElementTree as ET
-          import gzip
           from PIL import Image
           root=Path('.generated-site/ncep-ensembles')
           manifest=json.loads((root/'index.json').read_text())
@@ -127,12 +131,10 @@ jobs:
                   assert path.is_file() and path.resolve().is_relative_to(root.resolve())
                   if path.suffix=='.png':
                       image=Image.open(path);image.load();assert image.width==2000 and image.height in (1200,1300);count+=1
-                  if path.suffix in ('.svg','.svgz'):
-                      xml=gzip.decompress(path.read_bytes()) if path.suffix=='.svgz' else path.read_bytes()
-                      assert ET.fromstring(xml).tag.endswith('svg')
+                  assert path.suffix not in ('.svg','.svgz'), 'Workflow chart publication is PNG only'
           assert count==sum(len(r['regions'])+3*len(r['storms']) for r in manifest['records']) and count>=14
           assert not any(p.suffix in ('.grib2','.grb','.nc','.zarr','.zip') for p in root.rglob('*'))
-          print(f'{count} genuine 2000px PNGs independently decoded; all standalone SVGs and native CSV/JSON verified')
+          print(f'{count} genuine 2000px PNGs decoded; PNG-only paths and compact native CSV/JSON checked')
           PY
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

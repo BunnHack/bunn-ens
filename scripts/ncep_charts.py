@@ -33,7 +33,7 @@ except ImportError: # Importable by unittest from the repository root.
     from scripts.wm6_forecast import add_geography
 
 PUBLIC='https://raw.githubusercontent.com/BunnHack/bunn-ens/ensemble-track-data/'
-VERSION='ncep-charts-v2-svgz'
+VERSION='ncep-charts-v3-png'
 REGIONS=[
     {'id':'world','label':'Global','bounds':[-180,180,-55,60]},
     {'id':'wp','label':'Western Pacific','bounds':[100,210,0,55]},
@@ -65,7 +65,7 @@ def validate(payload,model):
     for t in payload['tracks']:
         if t['sample'] not in range(31) or t['nativeMember']!=member_id(model,t['sample']) or t['kind'] not in ('matched','genesis','derived_low') or t['trackId']!=t['sourceId']:
             raise ValueError('Native trajectory identity mismatch')
-        if t['kind']=='matched' and not re.fullmatch(r'(?:AL|EP|CP|WP|IO|SH|SP|SI)(?:0[1-9]|[1-9]\d)20\d{2}',t['trackId']):
+        if t['kind']=='matched' and not re.fullmatch(r'(?:AL|EP|CP|WP|IO|AA|BB|SH|SP|SI)(?:0[1-9]|[1-9]\d)20\d{2}',t['trackId']):
             raise ValueError('Unsafe native numbered-storm asset identity')
         hours=[p['hour'] for p in t['points']]
         if not hours or hours!=sorted(set(hours)) or any(type(h) is not int or h%6 or not 0<=h<=HORIZONS[model] for h in hours):
@@ -150,13 +150,10 @@ def provenance(payload):
 def save(fig,destination):
     destination.parent.mkdir(parents=True,exist_ok=True)
     fig.savefig(destination.with_suffix('.png'),dpi=160,facecolor=fig.get_facecolor())
-    # Matplotlib embeds glyph paths; this is a standalone real SVG, not a screenshot URI.
-    svg=io.StringIO()
-    fig.savefig(svg,format='svg',facecolor=fig.get_facecolor(),metadata={'Creator':'Bunn ENS '+VERSION})
-    destination.with_suffix('.svgz').write_bytes(gzip.compress(svg.getvalue().encode(),compresslevel=9,mtime=0))
+    # Workflow graphics are PNG only. Do not generate or publish SVG/SVGZ.
     destination.with_suffix('.svg').unlink(missing_ok=True)
     plt.close(fig)
-    return {'png':str(destination.with_suffix('.png')),'svg':str(destination.with_suffix('.svgz'))}
+    return {'png':str(destination.with_suffix('.png'))}
 
 
 def chart_footer(fig,payload,extra):
@@ -169,7 +166,7 @@ def map_chart(payload,region,destination,storm=None):
     west,east,south,north=region['bounds']
     tracks=[t for t in payload['tracks'] if storm is None or t['kind']=='matched' and t['trackId']==storm]
     fig,ax=plt.subplots(figsize=(12.5,8.125));fig.subplots_adjust(left=.065,right=.98,top=.88,bottom=.13)
-    fig.patch.set_facecolor('#eef5fa');ax.set_facecolor('#eef5fa')
+    fig.patch.set_facecolor('white');ax.set_facecolor('#edfaff')
     add_geography(ax,region)
     ax.set(xlim=(west,east),ylim=(south,north),xlabel='Longitude',ylabel='Latitude')
     ax.grid(color='#b8cbd4',linewidth=.5)
@@ -274,7 +271,9 @@ def generate(out,sources=None,regions=None,data_ref='ensemble-track-data'):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     shutil.copyfile(Path(__file__).parent/'templates/ncep-ensembles.html',out/'index.html')
     index=out/'index.json';prior=json.loads(index.read_text()) if index.exists() else {'schema':1,'generator':VERSION,'records':[]}
-    records=list(prior.get('records',[]));changed=False
+    records=[r for r in prior.get('records',[]) if r.get('generator')==VERSION];changed=False
+    for pattern in ('*.svg','*.svgz'):
+        for path in out.rglob(pattern):path.unlink()
     regions=regions or REGIONS
     for model in HORIZONS:
         payload,digest=read_publication(model,(sources or {}).get(model),data_ref)
@@ -289,7 +288,7 @@ def generate(out,sources=None,regions=None,data_ref='ensemble-track-data'):
                 'derived':payload['derived'],'regions':[],'storms':[],'assets':[], 'data':key+'/source.json','csv':key+'/native.csv'}
         (folder/'source.json').write_text(json.dumps(payload,ensure_ascii=False,separators=(',',':'),allow_nan=False)+'\n')
         export_native(payload,folder/'native.csv')
-        def asset(base):return {'png':key+'/'+base+'.png','svg':key+'/'+base+'.svgz'}
+        def asset(base):return {'png':key+'/'+base+'.png'}
         for region in regions:
             base='regions/'+region['id'];stats=map_chart(payload,region,folder/base)
             record['regions'].append({'id':region['id'],'label':region['label'],'bounds':region['bounds'],**asset(base),**stats})

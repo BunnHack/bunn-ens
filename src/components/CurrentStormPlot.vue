@@ -21,9 +21,12 @@ const lats=computed(()=>Array.from({length:Math.max(0,Math.floor(region.value.no
 function geometryPath(geometry:SourceGeometry,close=false){if(geometry.some((p,i)=>i>0&&Math.abs(x(p[0])-x(geometry[i-1]![0]))>850))return '';return geometry.map(([lon,lat],i)=>`${i?'L':'M'}${x(lon)},${y(lat)}`).join(' ')+(close?' Z':'')}
 const conePath=computed(()=>geometryPath(cone.value,true))
 const segments=computed(()=>points.value.flatMap((p,i)=>{
- const before=points.value[i-1];if(!before||Date.parse(p.date)<=Date.parse(before.date)||(Date.parse(p.date)-Date.parse(before.date))/3600000>12||Math.abs(x(p.lon)-x(before.lon))>=850)return []
+ const before=points.value[i-1];if(!before||Date.parse(p.date)<=Date.parse(before.date)||Math.abs(x(p.lon)-x(before.lon))>=850)return []
  const spline=p.spline,first=spline?.[0],last=spline?.[spline.length-1]
  const source=!!first&&!!last&&Math.abs(first[0]-before.lon)<.05&&Math.abs(first[1]-before.lat)<.05&&Math.abs(last[0]-p.lon)<.05&&Math.abs(last[1]-p.lat)<.05
+ const hours=(Date.parse(p.date)-Date.parse(before.date))/3600000
+ // Late official forecasts use 24h spacing. Draw only their verified native spline, never synthesize that gap.
+ if(hours>12&&!(hours===24&&before.forecast&&p.forecast&&source))return []
  return [{before,point:p,source,d:geometryPath(source?spline!:[[before.lon,before.lat],[p.lon,p.lat]])}]
 }))
 const color=(p:StormFix)=>props.storm.centroid?'#7b8798':windCategory(p.wind)?.color??'#7b8798'

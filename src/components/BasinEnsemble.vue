@@ -5,7 +5,6 @@ import { REFRESH_MS } from '../data/wnc2'
 import { basinCsv, basinRegions, pointInRegion, type MapTheme } from '../data/basin'
 import { cycloneCatalog, cycloneChoices, cycloneMean, cycloneRegion, isUnmatchedWm6Id, loadPotential, potentialModels, type PotentialModel, type PotentialResult } from '../data/potential'
 import BasinPlot from './BasinPlot.vue'
-import NcepPublishedCharts from './NcepPublishedCharts.vue'
 import Wm6DataAudit from './Wm6DataAudit.vue'
 import ChartFrame from './ChartFrame.vue'
 import { focusedProbabilityRegion, passageField, type ProbabilityField } from '../data/probability'
@@ -27,7 +26,8 @@ const loading = ref(false)
 const error = ref('')
 const showInfo = ref(false)
 const nativeModel = computed(() => model.value === 'gefs' || model.value === 'aigefs' ? model.value : undefined)
-const supported = computed(() => ['wn3', 'wn2', 'wm6', 'genc'].includes(model.value))
+const supported = computed(() => ['wn3', 'wn2', 'wm6', 'genc', 'gefs', 'aigefs'].includes(model.value))
+const horizon = computed(() => model.value==='gefs'?120:model.value==='aigefs'?240:312)
 const title = computed(() => props.mode === 'basin' ? '洋區系集預報' : '台風潛勢預報')
 const region = computed(() => basinRegions.find(item => item.id === regionId.value)!)
 const selectedModel = computed(() => potentialModels.find(item => item.id === model.value)!)
@@ -74,7 +74,7 @@ const availableRuns = computed(() => {
 })
 let controller: AbortController | undefined
 let timer: ReturnType<typeof setInterval> | undefined
-function chooseModel(id: string) { model.value = id; runChoice.value = 'latest'; forecastType.value = 'ensemble' }
+function chooseModel(id: string) { model.value = id; runChoice.value = 'latest'; forecastType.value = 'ensemble'; probabilityLead.value=id==='gefs'?120:id==='aigefs'?240:312 }
 function navigateMode(event: Event, mode: 'basin' | 'typhoon') { if (props.mode !== mode) { event.preventDefault(); window.location.hash = '#weather-tools/' + mode } }
 async function refresh() {
   controller?.abort(); result.value = null; error.value = ''; loading.value = false
@@ -112,7 +112,7 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
 <template>
   <section class="basin-viewer" :data-theme="theme" :data-mode="mode" :aria-label="zhHans(title)">
     <div class="basin-top"><a href="#weather-tools">← Weather Tools</a><h1 tabindex="-1">{{ zhHans(title) }}</h1><span>实际系集路径 · 0–{{ nativeModel==='gefs'?120:nativeModel==='aigefs'?240:312 }}h</span></div>
-    <div class="basin-layout" :class="{'ncep-layout':nativeModel}">
+    <div class="basin-layout">
       <aside class="basin-sidebar basin-panel" aria-label="台风预报模式选单">
         <h2>台风预报</h2>
         <details v-for="section in sections" :key="section" class="basin-section"><summary>{{ zhHans(section) }}</summary><template v-if="zhHans(section) === '主要模式预报'"><p><a href="#weather-tools/overview">预报洋区总览 →</a></p><p><a href="#weather-tools/extended">中远期袭击潜势 →</a></p><p><a href="#forecast-models">WM-6 全球格点预报 →</a></p></template><p v-else>此分类产品尚未接入。</p></details>
@@ -124,32 +124,31 @@ onBeforeUnmount(() => { controller?.abort(); clearInterval(timer); document.remo
       </aside>
 
       <div class="basin-chart-panel basin-panel">
-        <NcepPublishedCharts v-if="nativeModel" :key="nativeModel" :model="nativeModel" :mode="mode" :active="active"/>
-        <p v-else-if="loading" class="basin-status" role="status">正在载入 {{ zhHans(selectedModel.label) }} 所选时次与成员路径…</p>
+        <p v-if="loading" class="basin-status" role="status">正在载入 {{ zhHans(selectedModel.label) }} 所选时次与成员路径…</p>
         <div v-else-if="error" class="basin-error" role="alert"><h2>无法载入此时次</h2><p>{{ zhHans(error) }}</p><button @click="refresh">重试</button></div>
         <div v-else-if="!supported" class="basin-empty"><h2>{{ zhHans(selectedModel.label) }} 尚未接入</h2><p>不会以其他模式或旧图片代替。</p><button @click="chooseModel('wn3')">查看 WNC3 预报</button></div>
         <div v-else-if="mode === 'typhoon' && ['sst', 'heat'].includes(forecastType)" class="basin-empty"><h2>{{ zhHans(products.find(item => item.id === forecastType)?.label) }} 尚未接入</h2><p>目前资料源不含海温或海洋热焓场，不以风速或气压替代。</p><button @click="forecastType = 'ensemble'">返回系集预报</button></div>
         <div v-else-if="forecastType === 'probability' && probability.error" class="basin-empty probability-unavailable" role="status"><h2>此路径不能计算系集概率</h2><p>{{ zhHans(probability.error) }}</p><button @click="forecastType = 'ensemble'">返回系集预报</button></div>
         <template v-else-if="result && plotted">
           <ChartFrame v-if="active" :filename="chartFilename" :title="zhHans(`${selectedModel.label} ${selectedStorm || region.label} 预报图`)"><BasinPlot v-if="chartCatalog" :catalog="chartCatalog" :region="probability.field?.region ?? mapRegion" :theme="theme" :model-label="selectedModel.label" :wind-mode="mode === 'typhoon' && forecastType === 'ensemble'" :storm="mode === 'typhoon' ? selectedStorm : ''" :mean="plottedMean" :mean-label="meanLabel" :time-anchor="result.wm6?.forecastZero ?? ''" :probability="probability.field ?? undefined" /></ChartFrame>
-          <p v-if="probability.field" class="basin-data-note probability-method">本站计算的 120 km 通过比例，非官方袭击／登陆／损害概率。时窗 0–{{ zhHans(probabilityLead) }}h；分母为完整系集 {{ zhHans(probability.field.denominator) }} 个成员，当前时窗有 {{ zhHans(probability.field.trackedMembers) }} 个成员追踪到此气旋，每个成员每个位置最多计一次。{{ zhHans(model === 'wm6' ? '分母使用供应商 ens_size。' : '分母取整份全球 CSV 出现的成员数，不按气旋／时窗缩减；若来源缺漏整个成员，比例可能偏高。') }}以球面短弧内插连续路径，超过 12 小时缺口不连接；未追踪／缺失成员不计命中，并不代表无风险。等值线网格约 {{ zhHans(probability.field.step.toFixed(2)) }}°，不是供应商 cone；城市标签指市中心点 120 km 内，不是全县市覆盖率。预设图域聚焦 ≥5% 通过区，可切换完整成员图域。</p>
-          <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ zhHans(result.source === 'snapshot' ? '离线快照 · 未确认为最新资料' : model === 'wm6' ? '已连接 WM-6 真实成员路径' : '已连接 WeatherNext CSV') }} · {{ zhHans(currentTime) }} · {{ zhHans(visiblePoints.length) }} 个预报点 · 0–{{ zhHans(forecastType === 'probability' ? probabilityLead : 312) }}h</p>
+          <p v-if="probability.field" class="basin-data-note probability-method">本站计算的 120 km 通过比例，非官方袭击／登陆／损害概率。时窗 0–{{ zhHans(probabilityLead) }}h；分母为完整系集 {{ zhHans(probability.field.denominator) }} 个成员，当前时窗有 {{ zhHans(probability.field.trackedMembers) }} 个成员追踪到此气旋，每个成员每个位置最多计一次。{{ zhHans(result.ncep ? 'GEFS/AIGEFS分母固定31，不因路径或覆盖缺漏而缩小。' : model === 'wm6' ? '分母使用供应商 ens_size。' : '分母取整份全球 CSV 出现的成员数，不按气旋／时窗缩减；若来源缺漏整个成员，比例可能偏高。') }}以球面短弧内插连续路径，超过 12 小时缺口不连接；未追踪／缺失成员不计命中，并不代表无风险。等值线网格约 {{ zhHans(probability.field.step.toFixed(2)) }}°，不是供应商 cone；城市标签指市中心点 120 km 内，不是全县市覆盖率。预设图域聚焦 ≥5% 通过区，可切换完整成员图域。</p>
+          <p class="basin-status" :class="{ 'basin-snapshot': result.source === 'snapshot' }">{{ zhHans(result.source === 'snapshot' ? '离线快照 · 未确认为最新资料' : result.ncep ? '已连接 NOAA/NCEP 31成员原生资料' : model === 'wm6' ? '已连接 WM-6 真实成员路径' : '已连接 WeatherNext CSV') }} · {{ zhHans(currentTime) }} · {{ zhHans(visiblePoints.length) }} 个预报点 · 0–{{ zhHans(forecastType === 'probability' ? probabilityLead : horizon) }}h</p>
           <p v-if="result.wm6" class="basin-data-note wm6-track-counts">本次上游：{{ zhHans(result.wm6.matchedCount) }} 个匹配气旋、{{ zhHans(result.wm6.unmatchedCount) }} 条未匹配成员路径。当前图中：{{ zhHans(wm6Counts.matched) }} 个匹配气旋、{{ zhHans(wm6Counts.unmatched) }} 条未匹配路径。{{ zhHans(includeUnofficial ? '未匹配路径是单一成员的生成候选，不代表同样数目的独立风暴，也不保证成台；未自动并入命名气旋。' : '未匹配路径已隐藏。') }} 时效基准：{{ zhHans(result.wm6.forecastZero) }}。</p>
           <Wm6DataAudit v-if="result.wm6" :points="visiblePoints" :forecast-zero="result.wm6.forecastZero" />
           <p v-if="result.warning" class="basin-data-note" role="status">{{ zhHans(result.warning) }}</p>
           <p v-if="mode === 'typhoon' && forecastType === 'ensemble'" class="basin-data-note">颜色使用原始风速与本站风级，未放大强度。{{ zhHans(model === 'wm6' ? selectedKind === 'unmatched' ? '此为未匹配单成员路径，没有系集平均线。' : '深色线为供应商平均路径。' : '深色线为本站计算的平均路径，仅保留至少 25% 成员存在的时效；数字 genesis ID 仅属单一成员，不跨成员合并。') }}</p>
-          <a v-if="result.url" class="basin-source" :href="result.url" target="_blank" rel="noopener noreferrer">原始{{ zhHans(model === 'wm6' ? 'JSON' : 'CSV') }} 资料来源 ↗</a>
+          <a v-if="result.url" class="basin-source" :href="result.url" target="_blank" rel="noopener noreferrer">原始{{ zhHans(model === 'wm6'||result.ncep ? 'JSON' : 'CSV') }} 资料来源 ↗</a>
         </template>
       </div>
 
-      <aside v-if="!nativeModel" class="basin-controls basin-panel" aria-label="预报控制台">
+      <aside class="basin-controls basin-panel" aria-label="预报控制台">
         <h2>控制台</h2>
         <button v-if="mode === 'basin'" class="basin-csv" :disabled="!supported || loading || !visiblePoints.length" @click="downloadCsv">下载目前洋区CSV文件</button>
         <label class="basin-run">起报时间<select v-model="runChoice" :disabled="!supported" aria-label="洋区起报时间"><option value="latest">最新已发布时次 (UTC)</option><option v-for="run in availableRuns" :key="run.value" :value="run.value">{{ zhHans(run.label) }}</option></select></label>
         <label v-if="model === 'wm6'" class="wm6-unofficial-toggle"><input v-model="includeUnofficial" type="checkbox" @change="refresh" /> 显示未匹配成员路径（生成候选）</label>
         <template v-if="mode === 'typhoon'">
           <fieldset class="potential-products"><legend>预报类型</legend><div class="basin-buttons"><button v-for="product in products" :key="product.id" :class="{ selected: forecastType === product.id }" :aria-pressed="forecastType === product.id" @click="forecastType = product.id">{{ zhHans(product.label) }}</button></div></fieldset>
-          <label v-if="forecastType === 'probability'" class="probability-window">120 km 通过比例 · 时窗 0–{{ zhHans(probabilityLead) }}h<input v-model.number="probabilityLead" type="range" min="0" max="312" step="6" aria-label="Probability maximum forecast hour" /></label>
+          <label v-if="forecastType === 'probability'" class="probability-window">120 km 通过比例 · 时窗 0–{{ zhHans(probabilityLead) }}h<input v-model.number="probabilityLead" type="range" min="0" :max="horizon" step="6" aria-label="Probability maximum forecast hour" /></label>
           <label v-if="forecastType === 'probability'" class="wm6-unofficial-toggle"><input v-model="probabilityFullExtent" type="checkbox" aria-label="Show full probability map extent" /> 显示完整成员图域（预设聚焦 ≥5% 通过区）</label>
           <fieldset class="potential-storms"><legend>台风编号 / 单成员生成路径</legend><div class="basin-buttons"><button v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :class="{ selected: selectedStorm === option.key }" :aria-pressed="selectedStorm === option.key" @click="selectedStorm = option.key">{{ zhHans(option.key) }}</button></div><label v-if="options.some(item => item.kind !== 'matched')" class="basin-run">其他生成候选（独立单成员）<select v-model="selectedStorm" aria-label="气旋与单成员生成路径"><optgroup label="已匹配气旋"><option v-for="option in options.filter(item => item.kind === 'matched')" :key="option.key" :value="option.key">{{ zhHans(option.label) }}</option></optgroup><optgroup label="未匹配 / 单成员生成路径"><option v-for="option in options.filter(item => item.kind !== 'matched')" :key="option.key" :value="option.key">{{ zhHans(option.label) }}</option></optgroup></select></label><p v-if="!options.length" class="basin-help">目前没有可选气旋。</p></fieldset>
         </template>

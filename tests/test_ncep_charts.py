@@ -78,7 +78,7 @@ class StaticChartTests(unittest.TestCase):
             with self.assertRaises(ValueError):charts.validate(p,'GEFS')
         with self.assertRaises(ValueError):charts.read_publication('GEFS',data_ref='../../other-model')
 
-    def test_true_png_svg_dimensions_signatures_and_vector_content(self):
+    def test_true_png_only_dimensions_signatures_and_no_svg_artifacts(self):
         from PIL import Image
         payload=synthetic()
         with tempfile.TemporaryDirectory() as d:
@@ -89,9 +89,8 @@ class StaticChartTests(unittest.TestCase):
             for name,size in [('track',(2000,1300)),('wind',(2000,1200)),('pressure',(2000,1200))]:
                 data=(folder/(name+'.png')).read_bytes();self.assertEqual(data[:8],b'\x89PNG\r\n\x1a\n')
                 image=Image.open(io.BytesIO(data));image.load();self.assertEqual(image.size,size)
-                root=ET.fromstring(gzip.decompress((folder/(name+'.svgz')).read_bytes()));self.assertTrue(root.tag.endswith('svg'))
+                self.assertFalse((folder/(name+'.svgz')).exists())
                 self.assertFalse((folder/(name+'.svg')).exists())
-                self.assertGreater(len(root.findall('.//{http://www.w3.org/2000/svg}path')),10)
             self.assertEqual(stats['counts'],[[0,31],[6,31],[12,31]])
 
     def test_native_csv_keeps_field_ms_separate_and_missing_wind_blank(self):
@@ -109,7 +108,7 @@ class StaticChartTests(unittest.TestCase):
     def test_manifest_assets_backward_retention_and_exact_source_skip(self):
         def render(payload,region,destination,storm=None):
             destination.parent.mkdir(parents=True,exist_ok=True)
-            for ext in ('.png','.svgz'):destination.with_suffix(ext).write_text('SYNTHETIC ASSET FOR CACHE TEST ONLY')
+            destination.with_suffix('.png').write_text('SYNTHETIC ASSET FOR CACHE TEST ONLY')
             return {'trajectoryCount':31,'separateStormMeans':1}
         def intensity(payload,storm,field,destination):return render(payload,None,destination)
         with tempfile.TemporaryDirectory() as folder:

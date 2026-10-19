@@ -1,0 +1,59 @@
+name: Refresh NCEP native trackers
+on:
+  schedule:
+    - cron: '20 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ncep-native-track-publication
+  cancel-in-progress: false
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Discover actual latest cycles and fetch only missing native inventories
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          from pathlib import Path
+          from scripts.ncep_ensembles import discover, native_dataset, write_dataset, iso
+          out=Path('.generated-ensembles');out.mkdir(exist_ok=True)
+          failures=[]
+          for model in ('GEFS','AIGEFS'):
+              try:
+                  run=discover(model)
+                  try:
+                      url=f'https://raw.githubusercontent.com/BunnHack/bunn-ens/ensemble-track-data/{model}.json'
+                      with urllib.request.urlopen(url,timeout=30) as response:
+                          raw=response.read(16_000_001)
+                      if len(raw)>16_000_000:raise ValueError('Public JSON budget')
+                      old=json.loads(raw)
+                      complete=old['model']==model and old['run']==iso(run) and len(old['members'])==31 and all(m['tracker']=='available' and (model!='GEFS' or m['genesis']=='available') for m in old['members'])
+                      if complete:
+                          print(model,iso(run),'already has complete native inventory; keep existing field coverage and charts')
+                          continue
+                  except Exception:
+                      pass
+                  write_dataset(native_dataset(model,run),out)
+              except Exception as error:
+                  failures.append(f'{model}: {type(error).__name__}: {str(error)[:180]}')
+          for failure in failures:print('::warning::'+failure)
+          if failures and not list(out.glob('*.json')):raise SystemExit('No new usable native data; prior publication preserved')
+          PY
+      - name: Publish native JSON and refresh PNG immediately without waiting for field-L
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs=require('node:fs');
+            if(!fs.readdirSync('.generated-ensembles').some(f=>/^(GEFS|AIGEFS)\.json$/.test(f)))return;
+            await require('./scripts/publish_ncep.cjs')({github,context});
+            await github.rest.actions.createWorkflowDispatch({owner:context.repo.owner,repo:context.repo.repo,workflow_id:'ncep-charts.yml',ref:'main',inputs:{skip_tests:'true'}});
